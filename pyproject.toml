@@ -1,0 +1,13 @@
+[project]
+name = "rtdata"
+version = "0.1.3"
+description = "实时行情数据 SDK - 连接 Cloud Gateway 透传网关"
+requires-python = ">=3.9"
+# 零外部依赖，纯标准库
+
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["rtdata*"]
