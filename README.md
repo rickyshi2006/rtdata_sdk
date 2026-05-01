@@ -26,6 +26,23 @@ pip install -e .
 pip install rtdata-0.1.3-py3-none-any.whl
 ```
 
+## Token 兑换
+
+如果你拿到的是卡号或 UUID，请先到下面的网址兑换 token：
+
+`https://rtdata.fengv2ray.tk`
+
+当前仓库内提供了一份卡号清单文件：
+
+- [TOKEN_EXCHANGE_CARDS.txt](./TOKEN_EXCHANGE_CARDS.txt)
+
+使用方式：
+
+1. 打开兑换页面
+2. 输入文件中的卡号或 UUID
+3. 完成兑换后获取 token
+4. 在 SDK 中把该 token 传给 `rtdata.API(...)` 或 `RtdataClient(...)`
+
 ## 快速开始
 
 推荐使用 `API` 封装：
