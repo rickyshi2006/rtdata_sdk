@@ -54,7 +54,7 @@ api = rtdata.API(
 
 说明：
 
-- `API` 支持懒连接，首次 `subscribe()` / `get_history()` / `get_finance()` 时会自动连接
+- `API` 支持懒连接，首次 `subscribe()` / `get_kline()` / `get_finance()` 时会自动连接
 - 也可以先显式调用 `api.connect()`
 - 使用完成后应调用 `api.close()`，或直接使用 context manager
 
@@ -219,7 +219,7 @@ print(api.last_subscribe_rejected)
 ### 7.1 推荐写法：按时间范围
 
 ```python
-klines = api.get_history(
+klines = api.get_kline(
     symbol="000001.SZ",
     period="1d",
     start="2015-01-01",
@@ -260,7 +260,7 @@ klines = api.get_history(
 ### 7.4 分钟线示例
 
 ```python
-klines = api.get_history(
+klines = api.get_kline(
     "rb2610.SHF",
     period="1m",
     start="2026-04-29",
@@ -271,19 +271,19 @@ klines = api.get_history(
 ### 7.5 兼容接口：最近 N 根
 
 ```python
-klines = api.get_history_by_count("600519.SH", period="1d", count=10)
+klines = api.get_kline_by_count("600519.SH", period="1d", count=10)
 ```
 
 > 该接口仅为兼容旧逻辑保留，新代码建议统一使用 `start/end`。
 
 ### 7.6 兼容参数
 
-`get_history()` 仍兼容旧参数名：
+`get_kline()` 仍兼容旧参数名：
 
 - `start_time`
 - `end_time`
 
-如果向 `get_history()` 继续传 `count=...`，当前实现会记录 warning，但新代码不建议再这样使用。
+如果向 `get_kline()` 继续传 `count=...`，当前实现会记录 warning，但新代码不建议再这样使用。
 
 ## 8. 历史缓存
 
@@ -301,7 +301,7 @@ klines = api.get_history_by_count("600519.SH", period="1d", count=10)
 - 缺少部分区间：只回源缺失段
 - 再次请求相同区间：优先读本地
 - 只有同时给出 `start` 和 `end` 时才会走这套缓存
-- `get_history_by_count()` 不使用本地历史缓存
+- `get_kline_by_count()` 不使用本地历史缓存
 
 ### 8.3 关闭缓存
 
@@ -470,7 +470,7 @@ api = rtdata.API(
 import rtdata
 
 with rtdata.API(token="your_token", api_url="https://api.fengv2ray.tk") as api:
-    rows = api.get_history("000001.SZ", period="1d", start="2015-01-01", end="2015-12-31")
+    rows = api.get_kline("000001.SZ", period="1d", start="2015-01-01", end="2015-12-31")
 ```
 
 底层客户端也支持：
@@ -511,7 +511,27 @@ with RtdataClient(token="your_token", api_url="https://api.fengv2ray.tk") as cli
 - `report_period`
 - `data`
 
-## 16. 示例文件
+## 16. 返回格式说明
+
+- `subscribe(symbols)`：无返回值；实时数据通过 `@api.on_quote` 回调推送，回调参数类型是 `Quote`
+- `unsubscribe(symbols=None)`：无返回值
+- `get_quote(symbol)`：返回 `Quote` 或 `None`
+- `get_kline(...)`：返回 `list[Kline]`
+- `get_kline_range(...)`：返回 `list[Kline]`
+- `get_kline_for_day(...)`：返回 `list[Kline]`
+- `get_kline_for_today(...)`：返回 `list[Kline]`
+- `get_kline_by_count(...)`：返回 `list[Kline]`
+- `get_finance(...)`：返回 `FinanceData`
+- `get_finance_ttm(...)`：返回 `FinanceData`
+- `get_finance_pit(...)`：返回 `FinanceData`
+- `get_finance_ratios(...)`：返回 `FinanceData`
+- `symbols`：返回 `dict[int, str]`，即 `{symbol_id: symbol_code}`
+- `last_subscribe_requested`：返回 `list[str]`
+- `last_subscribe_confirmed`：返回 `list[str]`
+- `last_subscribe_rejected`：返回 `list[str]`
+- `last_subscribe_warning`：返回 `str | None`
+
+## 17. 示例文件
 
 - `examples/basic_usage.py`
 - `examples/history_kline.py`

@@ -61,7 +61,7 @@ api = rtdata.API(
 主推 `start/end` 时间范围语义：
 
 ```python
-rows = api.get_history(
+rows = api.get_kline(
     "000001.SZ",
     period="1d",
     start="2015-01-01",
@@ -69,7 +69,7 @@ rows = api.get_history(
 )
 ```
 
-兼容接口 `get_history_by_count()` 仍保留，但不建议新代码继续使用。
+兼容接口 `get_kline_by_count()` 仍保留，但不建议新代码继续使用。
 
 ### 4. 本地历史缓存
 
@@ -173,7 +173,7 @@ def on_quote(q):
 
 api.subscribe(["rb2610.SHF"])
 
-rows = api.get_history(
+rows = api.get_kline(
     "rb2610.SHF",
     period="1m",
     start="2026-04-29",

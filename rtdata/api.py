@@ -6,7 +6,7 @@
     api = rtdata.API(token="your_token")
 
     # 查询历史K线（按时间范围）
-    klines = api.get_history("600519.SH", period="1d",
+    klines = api.get_kline("600519.SH", period="1d",
                              start="2025-12-01", end="2025-12-31")
 
     # 查询财务数据
@@ -63,11 +63,11 @@ class API:
 
     # ── 查询 ──────────────────────────────────────────────
 
-    def get_history(self, symbol: str, period: str = '1d',
-                    start: Union[int, float, str, datetime, date] = 0,
-                    end: Union[int, float, str, datetime, date] = 0,
-                    timeout: float = 30.0,
-                    **legacy_kwargs) -> List[Kline]:
+    def get_kline(self, symbol: str, period: str = '1d',
+                  start: Union[int, float, str, datetime, date] = 0,
+                  end: Union[int, float, str, datetime, date] = 0,
+                  timeout: float = 30.0,
+                  **legacy_kwargs) -> List[Kline]:
         """查询历史 K 线（按时间范围）
 
         Args:
@@ -82,53 +82,29 @@ class API:
             - count 参数已废弃；如仍传入，会记录 warning，并由底层兼容处理
         """
         self._ensure_connected()
-        return self._client.get_history(
+        return self._client.get_kline(
             symbol, period=period, start=start, end=end, timeout=timeout, **legacy_kwargs)
 
-    def get_history_range(self, symbol: str, period: str = '1d',
-                          start: Union[int, float, str, datetime, date] = 0,
-                          end: Union[int, float, str, datetime, date] = 0,
-                          timeout: float = 30.0) -> List[Kline]:
+    def get_kline_range(self, symbol: str, period: str = '1d',
+                        start: Union[int, float, str, datetime, date] = 0,
+                        end: Union[int, float, str, datetime, date] = 0,
+                        timeout: float = 30.0) -> List[Kline]:
         self._ensure_connected()
-        return self._client.get_history_range(symbol, period=period, start=start, end=end, timeout=timeout)
+        return self._client.get_kline_range(symbol, period=period, start=start, end=end, timeout=timeout)
 
-    def get_history_for_day(self, symbol: str, day: Union[str, date, datetime],
-                            period: str = '1d', timeout: float = 30.0) -> List[Kline]:
+    def get_kline_for_day(self, symbol: str, day: Union[str, date, datetime],
+                          period: str = '1d', timeout: float = 30.0) -> List[Kline]:
         self._ensure_connected()
-        return self._client.get_history_for_day(symbol, day, period=period, timeout=timeout)
+        return self._client.get_kline_for_day(symbol, day, period=period, timeout=timeout)
 
-    def get_history_for_today(self, symbol: str, period: str = '1d', timeout: float = 30.0) -> List[Kline]:
+    def get_kline_for_today(self, symbol: str, period: str = '1d', timeout: float = 30.0) -> List[Kline]:
         self._ensure_connected()
-        return self._client.get_history_for_today(symbol, period=period, timeout=timeout)
+        return self._client.get_kline_for_today(symbol, period=period, timeout=timeout)
 
-    def get_history_by_count(self, symbol: str, period: str = '1d',
-                             count: int = 100, timeout: float = 30.0) -> List[Kline]:
+    def get_kline_by_count(self, symbol: str, period: str = '1d',
+                           count: int = 100, timeout: float = 30.0) -> List[Kline]:
         self._ensure_connected()
-        return self._client.get_history_by_count(symbol, period=period, count=count, timeout=timeout)
-
-    def history(self, symbol: str, period: str = '1d',
-                start: Union[int, float, str, datetime, date] = 0,
-                end: Union[int, float, str, datetime, date] = 0,
-                timeout: float = 30.0,
-                **legacy_kwargs) -> List[Kline]:
-        return self.get_history(symbol, period=period, start=start, end=end, timeout=timeout, **legacy_kwargs)
-
-    def history_range(self, symbol: str, period: str = '1d',
-                      start: Union[int, float, str, datetime, date] = 0,
-                      end: Union[int, float, str, datetime, date] = 0,
-                      timeout: float = 30.0) -> List[Kline]:
-        return self.get_history_range(symbol, period=period, start=start, end=end, timeout=timeout)
-
-    def history_day(self, symbol: str, day: Union[str, date, datetime],
-                    period: str = '1d', timeout: float = 30.0) -> List[Kline]:
-        return self.get_history_for_day(symbol, day, period=period, timeout=timeout)
-
-    def history_today(self, symbol: str, period: str = '1d', timeout: float = 30.0) -> List[Kline]:
-        return self.get_history_for_today(symbol, period=period, timeout=timeout)
-
-    def history_count(self, symbol: str, period: str = '1d',
-                      count: int = 100, timeout: float = 30.0) -> List[Kline]:
-        return self.get_history_by_count(symbol, period=period, count=count, timeout=timeout)
+        return self._client.get_kline_by_count(symbol, period=period, count=count, timeout=timeout)
 
     def get_finance(self, stock_code: str, report_period: str = '',
                     query_type: int = 4, timeout: float = 30.0) -> FinanceData:

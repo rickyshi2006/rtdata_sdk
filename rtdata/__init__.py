@@ -4,7 +4,7 @@
     import rtdata
 
     api = rtdata.API(token="your_token")
-    klines = api.get_history("600519.SH", period="1d",
+    klines = api.get_kline("600519.SH", period="1d",
                              start="2025-12-01", end="2025-12-31")
 """
 

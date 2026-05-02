@@ -84,7 +84,7 @@ with RtdataClient(
 ## 当前行为说明
 
 - 指定 `api_url` 后，SDK 会先做服务发现，再连接 discovery 返回的 TCP 节点。
-- `API.subscribe()` / `API.get_history()` / `API.get_finance()` 会在首次调用时自动连接；也可以先显式 `api.connect()`。
+- `API.subscribe()` / `API.get_kline()` / `API.get_finance()` 会在首次调用时自动连接；也可以先显式 `api.connect()`。
 - 实时订阅不是逐条完整回放；如果本地消费过慢，网关可能丢弃旧快照，或主动断开后由 SDK 自动重连。
 - 历史和财务查询是请求-响应语义。
 - 服务端显式拒绝会抛 `QueryError`，例如：
@@ -98,7 +98,7 @@ with RtdataClient(
 当前主推 `start/end` 时间范围语义：
 
 ```python
-klines = api.get_history(
+klines = api.get_kline(
     "000001.SZ",
     period="1d",
     start="2015-01-01",
@@ -115,7 +115,7 @@ klines = api.get_history(
 分钟线示例：
 
 ```python
-klines = api.get_history(
+klines = api.get_kline(
     "rb2610.SHF",
     period="1m",
     start="2026-04-29",
@@ -126,7 +126,7 @@ klines = api.get_history(
 兼容接口仍保留，但不推荐新代码继续使用：
 
 ```python
-klines = api.get_history_by_count("600519.SH", period="1d", count=10)
+klines = api.get_kline_by_count("600519.SH", period="1d", count=10)
 ```
 
 ## 本地历史缓存
@@ -137,7 +137,7 @@ klines = api.get_history_by_count("600519.SH", period="1d", count=10)
 - 缓存格式：分段二进制文件，不依赖 sqlite
 - 重复请求相同区间时，优先读取本地
 - 只对缺失时间段回源服务器
-- `get_history_by_count()` 和未给全 `start/end` 的查询不会走本地历史缓存
+- `get_kline_by_count()` 和未给全 `start/end` 的查询不会走本地历史缓存
 
 关闭历史缓存：
 
@@ -188,6 +188,23 @@ print(api.last_subscribe_rejected)
 - `QueryTimeoutError`：查询等待超时
 - `DisconnectedError`：连接中断导致查询失败
 - `ProtocolError`：协议解析错误
+
+## 返回格式
+
+- `subscribe()`：无返回值；实时数据通过 `@api.on_quote` 回调推送，回调参数类型是 `Quote`
+- `get_quote(symbol)`：返回 `Quote` 或 `None`
+- `get_kline(...)`：返回 `list[Kline]`
+- `get_kline_by_count(...)`：返回 `list[Kline]`
+- `get_finance(...)`：返回 `FinanceData`
+- `get_finance_ttm(...)`：返回 `FinanceData`
+- `get_finance_pit(...)`：返回 `FinanceData`
+- `get_finance_ratios(...)`：返回 `FinanceData`
+
+主要数据结构字段：
+
+- `Quote`：`symbol`、`symbol_id`、`bid`、`ask`、`last`、`volume`、`timestamp`，以及可选的高低开收、成交额和五档字段
+- `Kline`：`timestamp`、`open`、`high`、`low`、`close`、`volume`、`turnover`、`open_interest`
+- `FinanceData`：`stock_code`、`report_period`、`data`
 
 ## 资源释放
 
