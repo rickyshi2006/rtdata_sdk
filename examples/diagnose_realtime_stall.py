@@ -1,8 +1,8 @@
 """诊断实时订阅是否发生客户端本地停读/停回调。
 
 用法示例:
-    python examples/diagnose_realtime_stall.py --token test-02 --symbols 601919.SH
-    python examples/diagnose_realtime_stall.py --token test-02 --symbols 601919.SH rb2605.SHF
+    python examples/diagnose_realtime_stall.py --token your_token --symbols 601919.SH
+    python examples/diagnose_realtime_stall.py --token your_token --symbols 601919.SH rb2605.SHF
 
 输出包含:
 - recv: 客户端本地收到并执行回调的时间
@@ -32,7 +32,7 @@ def fmt_recv_ts() -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument('--token', default='test-03')
+    parser.add_argument('--token', default='your_token')
     parser.add_argument('--symbols', nargs='+', default=['601919.SH'])
     parser.add_argument('--api-url', default=rtdata.api.DEFAULT_API_URL)
     parser.add_argument('--sync-callbacks', action='store_true', help='禁用异步回调队列，直接在收包线程执行回调')
