@@ -73,7 +73,7 @@ class API:
 
         Args:
             symbol: 品种代码，如 "600519.SH"
-            period: K线周期: 1m, 5m, 15m, 30m, 1h, 1d, 1w, 1M
+            period: K线周期: 1m, 5m, 15m, 30m, 1h, 2h, 4h, 1d, 1w, 1M
             start:  起始时间。支持毫秒时间戳、datetime、date、"YYYY-MM-DD"、"YYYY-MM-DD HH:MM[:SS]"
             end:    结束时间。规则同 start；若仅传日期，自动扩展到当天 23:59:59.999
             timeout: 超时秒数

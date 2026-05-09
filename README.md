@@ -31,7 +31,7 @@ pip install -e .
 安装打包产物：
 
 ```bash
-pip install rtdata-0.1.4-py3-none-any.whl
+pip install rtdata-0.1.5-py3-none-any.whl
 ```
 
 ## Token 兑换
@@ -112,6 +112,7 @@ klines = api.get_kline(
 - 仅日期：自动扩展为当天 `00:00:00 ~ 23:59:59.999`
 - 带时间：按精确时间截取
 - 支持 `int/float` 毫秒时间戳、`datetime`、`date`、字符串日期时间
+- 支持周期：`1m`、`5m`、`15m`、`30m`、`1h`、`2h`、`4h`、`1d`、`1w`、`1M`
 - `adjust` 支持：
   - `none`：不复权
   - `forward`：前复权

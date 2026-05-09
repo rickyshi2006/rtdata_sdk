@@ -63,6 +63,7 @@ class MsgType:
 PERIOD_MAP = {
     '1m': 1, '5m': 2, '15m': 3, '30m': 4,
     '1h': 5, '1d': 6, '1w': 7, '1M': 8,
+    '2h': 9, '4h': 10,
 }
 
 ADJUST_MAP = {
