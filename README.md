@@ -162,12 +162,6 @@ klines = api.get_kline(
 )
 ```
 
-兼容接口仍保留，但不推荐新代码继续使用：
-
-```python
-klines = api.get_kline_by_count("600519.SH", period="1d", count=10)
-```
-
 ## 本地历史缓存
 
 当同时传入 `start` 和 `end` 时，SDK 默认开启本地历史缓存：
@@ -177,7 +171,7 @@ klines = api.get_kline_by_count("600519.SH", period="1d", count=10)
 - 重复请求相同区间时，优先读取本地
 - 只对缺失时间段回源服务器
 - 缓存维度包含 `symbol + period + adjust`
-- `get_kline_by_count()` 和未给全 `start/end` 的查询不会走本地历史缓存
+- 未给全 `start/end` 的查询不会走本地历史缓存
 
 关闭历史缓存：
 
@@ -234,7 +228,6 @@ print(api.last_subscribe_rejected)
 - `subscribe()`：无返回值；实时数据通过 `@api.on_quote` 回调推送，回调参数类型是 `Quote`
 - `get_quote(symbol)`：返回 `Quote` 或 `None`
 - `get_kline(...)`：返回 `list[Kline]`
-- `get_kline_by_count(...)`：返回 `list[Kline]`
 - `get_finance(...)`：返回 `FinanceData`
 - `get_finance_ttm(...)`：返回 `FinanceData`
 - `get_finance_pit(...)`：返回 `FinanceData`

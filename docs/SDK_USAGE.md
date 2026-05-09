@@ -304,22 +304,12 @@ klines = api.get_kline(
 )
 ```
 
-### 7.6 兼容接口：最近 N 根
-
-```python
-klines = api.get_kline_by_count("600519.SH", period="1d", count=10)
-```
-
-> 该接口仅为兼容旧逻辑保留，新代码建议统一使用 `start/end`。
-
-### 7.7 兼容参数
+### 7.6 兼容参数
 
 `get_kline()` 仍兼容旧参数名：
 
 - `start_time`
 - `end_time`
-
-如果向 `get_kline()` 继续传 `count=...`，当前实现会记录 warning，但新代码不建议再这样使用。
 
 ## 8. 历史缓存
 
@@ -338,7 +328,6 @@ klines = api.get_kline_by_count("600519.SH", period="1d", count=10)
 - 缺少部分区间：只回源缺失段
 - 再次请求相同区间：优先读本地
 - 只有同时给出 `start` 和 `end` 时才会走这套缓存
-- `get_kline_by_count()` 不使用本地历史缓存
 
 ### 8.3 关闭缓存
 
@@ -557,7 +546,6 @@ with RtdataClient(token="your_token", api_url="https://api.fengv2ray.tk") as cli
 - `get_kline_range(...)`：返回 `list[Kline]`
 - `get_kline_for_day(...)`：返回 `list[Kline]`
 - `get_kline_for_today(...)`：返回 `list[Kline]`
-- `get_kline_by_count(...)`：返回 `list[Kline]`
 - `get_finance(...)`：返回 `FinanceData`
 - `get_finance_ttm(...)`：返回 `FinanceData`
 - `get_finance_pit(...)`：返回 `FinanceData`

@@ -81,7 +81,6 @@ class API:
 
         兼容说明:
             - 旧参数 start_time / end_time 仍可用，但不再推荐
-            - count 参数已废弃；如仍传入，会记录 warning，并由底层兼容处理
         """
         self._ensure_connected()
         return self._client.get_kline(
@@ -107,13 +106,6 @@ class API:
                             adjust: str = 'none') -> List[Kline]:
         self._ensure_connected()
         return self._client.get_kline_for_today(symbol, period=period, timeout=timeout, adjust=adjust)
-
-    def get_kline_by_count(self, symbol: str, period: str = '1d',
-                           count: int = 100, timeout: float = 30.0,
-                           adjust: str = 'none') -> List[Kline]:
-        self._ensure_connected()
-        return self._client.get_kline_by_count(
-            symbol, period=period, count=count, timeout=timeout, adjust=adjust)
 
     def get_finance(self, stock_code: str, report_period: str = '',
                     query_type: int = 4, timeout: float = 30.0) -> FinanceData:

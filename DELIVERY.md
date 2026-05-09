@@ -69,8 +69,6 @@ rows = api.get_kline(
 )
 ```
 
-兼容接口 `get_kline_by_count()` 仍保留，但不建议新代码继续使用。
-
 ### 4. 本地历史缓存
 
 当前 SDK 的历史缓存不是 sqlite，而是本地分段二进制缓存。

@@ -457,12 +457,9 @@ class RtdataClient:
             start = legacy_kwargs.pop('start_time')
         if 'end_time' in legacy_kwargs and not end:
             end = legacy_kwargs.pop('end_time')
-        legacy_count = legacy_kwargs.pop('count', None)
         if legacy_kwargs:
             unexpected = ', '.join(sorted(legacy_kwargs.keys()))
             raise TypeError(f'Unexpected keyword arguments: {unexpected}')
-        if legacy_count is not None:
-            logger.warning('count parameter is deprecated; use start/end time range instead')
         adjust = str(adjust).lower()
         if adjust not in VALID_ADJUSTS:
             raise ValueError(f'Unsupported adjust value: {adjust}')
@@ -478,15 +475,6 @@ class RtdataClient:
 
         return self._perform_history_query(
             symbol, period, start_ms, end_ms, 5000, timeout, adjust=adjust)
-
-    def get_kline_by_count(self, symbol: str, period: str = '1d',
-                           count: int = 100, timeout: float = 30.0,
-                           adjust: str = 'none') -> List[Kline]:
-        logger.warning('count-based history queries are deprecated; prefer explicit start/end ranges')
-        adjust = str(adjust).lower()
-        if adjust not in VALID_ADJUSTS:
-            raise ValueError(f'Unsupported adjust value: {adjust}')
-        return self._perform_history_query(symbol, period, 0, 0, count, timeout, adjust=adjust)
 
     def get_kline_range(self, symbol: str, period: str = '1d',
                         start: Union[int, float, str, datetime, date] = 0,
