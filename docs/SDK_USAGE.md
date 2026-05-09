@@ -12,7 +12,7 @@
 - 本地历史分段二进制缓存
 - 自动重连与自动恢复订阅
 
-当前版本：`0.1.3`
+当前版本：`0.1.4`
 
 ## 1.1 当前支持范围
 
@@ -34,7 +34,7 @@ pip install -e .
 ### 2.2 安装 wheel
 
 ```bash
-pip install rtdata-0.1.3-py3-none-any.whl
+pip install rtdata-0.1.4-py3-none-any.whl
 ```
 
 ## 3. 两套入口
@@ -224,6 +224,7 @@ klines = api.get_kline(
     period="1d",
     start="2015-01-01",
     end="2015-12-31",
+    adjust="none",
     timeout=30.0,
 )
 ```
@@ -256,8 +257,41 @@ klines = api.get_kline(
 - 如果只传日期，自动扩展为当天整天
 - 如果带时间，按精确时间截取
 - `start` 必须小于等于 `end`
+- `adjust` 支持 `none` / `forward` / `backward`
 
-### 7.4 分钟线示例
+### 7.4 复权示例
+
+```python
+none_rows = api.get_kline(
+    "000001.SZ",
+    period="1d",
+    start="2015-01-01",
+    end="2015-03-31",
+    adjust="none",
+)
+
+forward_rows = api.get_kline(
+    "000001.SZ",
+    period="1d",
+    start="2015-01-01",
+    end="2015-03-31",
+    adjust="forward",
+)
+
+backward_rows = api.get_kline(
+    "000001.SZ",
+    period="1d",
+    start="2015-01-01",
+    end="2015-03-31",
+    adjust="backward",
+)
+```
+
+限制：
+
+- 当前仅 `SH` / `SZ` 股票支持 `forward` / `backward`
+- 非股票品种传入复权参数时，服务端会返回拒绝
+### 7.5 分钟线示例
 
 ```python
 klines = api.get_kline(
@@ -268,7 +302,7 @@ klines = api.get_kline(
 )
 ```
 
-### 7.5 兼容接口：最近 N 根
+### 7.6 兼容接口：最近 N 根
 
 ```python
 klines = api.get_kline_by_count("600519.SH", period="1d", count=10)
@@ -276,7 +310,7 @@ klines = api.get_kline_by_count("600519.SH", period="1d", count=10)
 
 > 该接口仅为兼容旧逻辑保留，新代码建议统一使用 `start/end`。
 
-### 7.6 兼容参数
+### 7.7 兼容参数
 
 `get_kline()` 仍兼容旧参数名：
 
@@ -294,6 +328,7 @@ klines = api.get_kline_by_count("600519.SH", period="1d", count=10)
 - 默认根目录：`~/.rtdata/`
 - 历史缓存目录：`~/.rtdata/history_v1/`
 - 缓存格式：分段二进制文件
+- 缓存维度：`symbol + period + adjust`
 
 ### 8.2 命中规则
 
@@ -535,6 +570,7 @@ with RtdataClient(token="your_token", api_url="https://api.fengv2ray.tk") as cli
 
 - `examples/basic_usage.py`
 - `examples/history_kline.py`
+- `examples/history_adjust.py`
 - `examples/finance_query.py`
 - `examples/test_subscribe2.py`
 - `examples/diagnose_realtime_stall.py`

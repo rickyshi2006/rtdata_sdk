@@ -31,6 +31,7 @@ from .exceptions import (
 )
 
 logger = logging.getLogger(__name__)
+VALID_ADJUSTS = {'none', 'forward', 'backward'}
 
 
 class RtdataClient:
@@ -367,7 +368,8 @@ class RtdataClient:
 
     def _perform_history_query(self, symbol: str, period: str,
                                start_ms: int, end_ms: int,
-                               max_count: int, timeout: float) -> List[Kline]:
+                               max_count: int, timeout: float,
+                               adjust: str = 'none') -> List[Kline]:
         if not self._authenticated:
             raise ConnectionError("Not connected")
 
@@ -385,10 +387,10 @@ class RtdataClient:
 
         logger.debug(
             f"Sending history request: symbol={symbol} period={period} request_id={request_id} "
-            f"start={start_ms} end={end_ms} count={max_count}"
+            f"start={start_ms} end={end_ms} count={max_count} adjust={adjust}"
         )
         msg = proto.encode_history_request(
-            request_id, symbol_id, period, start_ms, end_ms, max_count, symbol)
+            request_id, symbol_id, period, start_ms, end_ms, max_count, symbol, adjust=adjust)
         self._conn.send(msg)
 
         if not entry['event'].wait(timeout=timeout):
@@ -406,22 +408,24 @@ class RtdataClient:
 
         return [Kline(*k) for k in entry['klines']]
 
-    def _get_history_with_local_cache(self, symbol: str, period: str,
+    def _get_history_with_local_cache(self, symbol: str, period: str, adjust: str,
                                       start_ms: int, end_exclusive_ms: int,
                                       timeout: float) -> List[Kline]:
-        missing_ranges = self._history_cache.get_missing_ranges(symbol, period, start_ms, end_exclusive_ms)
+        missing_ranges = self._history_cache.get_missing_ranges(
+            symbol, period, adjust, start_ms, end_exclusive_ms)
         if missing_ranges:
             logger.info(
-                "History cache miss: symbol=%s period=%s missing_ranges=%s",
-                symbol, period, missing_ranges,
+                "History cache miss: symbol=%s period=%s adjust=%s missing_ranges=%s",
+                symbol, period, adjust, missing_ranges,
             )
         for missing_start, missing_end_exclusive in missing_ranges:
             fetch_end_ms = max(missing_start, missing_end_exclusive - 1)
             fetched = self._perform_history_query(
-                symbol, period, missing_start, fetch_end_ms, 5000, timeout)
+                symbol, period, missing_start, fetch_end_ms, 5000, timeout, adjust=adjust)
             self._history_cache.store_range(
                 symbol,
                 period,
+                adjust,
                 missing_start,
                 missing_end_exclusive,
                 [
@@ -439,13 +443,15 @@ class RtdataClient:
                 ],
             )
 
-        cached_rows = self._history_cache.load_range(symbol, period, start_ms, end_exclusive_ms - 1)
+        cached_rows = self._history_cache.load_range(
+            symbol, period, adjust, start_ms, end_exclusive_ms - 1)
         return [Kline(*row) for row in cached_rows]
 
     def get_kline(self, symbol: str, period: str = '1d',
                   start: Union[int, float, str, datetime, date] = 0,
                   end: Union[int, float, str, datetime, date] = 0,
                   timeout: float = 30.0,
+                  adjust: str = 'none',
                   **legacy_kwargs) -> List[Kline]:
         if 'start_time' in legacy_kwargs and not start:
             start = legacy_kwargs.pop('start_time')
@@ -457,6 +463,9 @@ class RtdataClient:
             raise TypeError(f'Unexpected keyword arguments: {unexpected}')
         if legacy_count is not None:
             logger.warning('count parameter is deprecated; use start/end time range instead')
+        adjust = str(adjust).lower()
+        if adjust not in VALID_ADJUSTS:
+            raise ValueError(f'Unsupported adjust value: {adjust}')
 
         start_ms = self._normalize_history_endpoint(start, is_end=False) if start else 0
         end_ms = self._normalize_history_endpoint(end, is_end=True) if end else 0
@@ -464,27 +473,37 @@ class RtdataClient:
             raise ValueError('start must be <= end')
 
         if start_ms and end_ms and self._history_cache.enabled:
-            return self._get_history_with_local_cache(symbol, period, start_ms, end_ms + 1, timeout)
+            return self._get_history_with_local_cache(
+                symbol, period, adjust, start_ms, end_ms + 1, timeout)
 
-        return self._perform_history_query(symbol, period, start_ms, end_ms, 5000, timeout)
+        return self._perform_history_query(
+            symbol, period, start_ms, end_ms, 5000, timeout, adjust=adjust)
 
     def get_kline_by_count(self, symbol: str, period: str = '1d',
-                           count: int = 100, timeout: float = 30.0) -> List[Kline]:
+                           count: int = 100, timeout: float = 30.0,
+                           adjust: str = 'none') -> List[Kline]:
         logger.warning('count-based history queries are deprecated; prefer explicit start/end ranges')
-        return self._perform_history_query(symbol, period, 0, 0, count, timeout)
+        adjust = str(adjust).lower()
+        if adjust not in VALID_ADJUSTS:
+            raise ValueError(f'Unsupported adjust value: {adjust}')
+        return self._perform_history_query(symbol, period, 0, 0, count, timeout, adjust=adjust)
 
     def get_kline_range(self, symbol: str, period: str = '1d',
                         start: Union[int, float, str, datetime, date] = 0,
                         end: Union[int, float, str, datetime, date] = 0,
+                        adjust: str = 'none',
                         timeout: float = 30.0) -> List[Kline]:
-        return self.get_kline(symbol, period=period, start=start, end=end, timeout=timeout)
+        return self.get_kline(symbol, period=period, start=start, end=end, timeout=timeout, adjust=adjust)
 
     def get_kline_for_day(self, symbol: str, day: Union[str, date, datetime],
-                          period: str = '1d', timeout: float = 30.0) -> List[Kline]:
-        return self.get_kline(symbol, period=period, start=day, end=day, timeout=timeout)
+                          period: str = '1d', timeout: float = 30.0,
+                          adjust: str = 'none') -> List[Kline]:
+        return self.get_kline(symbol, period=period, start=day, end=day, timeout=timeout, adjust=adjust)
 
-    def get_kline_for_today(self, symbol: str, period: str = '1d', timeout: float = 30.0) -> List[Kline]:
-        return self.get_kline(symbol, period=period, start=date.today(), end=date.today(), timeout=timeout)
+    def get_kline_for_today(self, symbol: str, period: str = '1d', timeout: float = 30.0,
+                            adjust: str = 'none') -> List[Kline]:
+        return self.get_kline(symbol, period=period, start=date.today(), end=date.today(),
+                              timeout=timeout, adjust=adjust)
 
     def get_finance(self, stock_code: str, report_period: str = '',
                     query_type: int = 4, timeout: float = 30.0) -> FinanceData:

@@ -31,7 +31,7 @@ pip install -e .
 安装打包产物：
 
 ```bash
-pip install rtdata-0.1.3-py3-none-any.whl
+pip install rtdata-0.1.4-py3-none-any.whl
 ```
 
 ## Token 兑换
@@ -103,6 +103,7 @@ klines = api.get_kline(
     period="1d",
     start="2015-01-01",
     end="2015-12-31",
+    adjust="none",
 )
 ```
 
@@ -111,6 +112,43 @@ klines = api.get_kline(
 - 仅日期：自动扩展为当天 `00:00:00 ~ 23:59:59.999`
 - 带时间：按精确时间截取
 - 支持 `int/float` 毫秒时间戳、`datetime`、`date`、字符串日期时间
+- `adjust` 支持：
+  - `none`：不复权
+  - `forward`：前复权
+  - `backward`：后复权
+
+复权示例：
+
+```python
+none_rows = api.get_kline(
+    "000001.SZ",
+    period="1d",
+    start="2015-01-01",
+    end="2015-03-31",
+    adjust="none",
+)
+
+forward_rows = api.get_kline(
+    "000001.SZ",
+    period="1d",
+    start="2015-01-01",
+    end="2015-03-31",
+    adjust="forward",
+)
+
+backward_rows = api.get_kline(
+    "000001.SZ",
+    period="1d",
+    start="2015-01-01",
+    end="2015-03-31",
+    adjust="backward",
+)
+```
+
+说明：
+
+- 当前仅 `SH` / `SZ` 股票支持 `forward` / `backward`
+- 期货和其他市场品种如传入复权参数，服务端会拒绝
 
 分钟线示例：
 
@@ -137,6 +175,7 @@ klines = api.get_kline_by_count("600519.SH", period="1d", count=10)
 - 缓存格式：分段二进制文件，不依赖 sqlite
 - 重复请求相同区间时，优先读取本地
 - 只对缺失时间段回源服务器
+- 缓存维度包含 `symbol + period + adjust`
 - `get_kline_by_count()` 和未给全 `start/end` 的查询不会走本地历史缓存
 
 关闭历史缓存：

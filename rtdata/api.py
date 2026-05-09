@@ -67,6 +67,7 @@ class API:
                   start: Union[int, float, str, datetime, date] = 0,
                   end: Union[int, float, str, datetime, date] = 0,
                   timeout: float = 30.0,
+                  adjust: str = 'none',
                   **legacy_kwargs) -> List[Kline]:
         """查询历史 K 线（按时间范围）
 
@@ -76,6 +77,7 @@ class API:
             start:  起始时间。支持毫秒时间戳、datetime、date、"YYYY-MM-DD"、"YYYY-MM-DD HH:MM[:SS]"
             end:    结束时间。规则同 start；若仅传日期，自动扩展到当天 23:59:59.999
             timeout: 超时秒数
+            adjust: 复权方式: none / forward / backward
 
         兼容说明:
             - 旧参数 start_time / end_time 仍可用，但不再推荐
@@ -83,28 +85,35 @@ class API:
         """
         self._ensure_connected()
         return self._client.get_kline(
-            symbol, period=period, start=start, end=end, timeout=timeout, **legacy_kwargs)
+            symbol, period=period, start=start, end=end, timeout=timeout,
+            adjust=adjust, **legacy_kwargs)
 
     def get_kline_range(self, symbol: str, period: str = '1d',
                         start: Union[int, float, str, datetime, date] = 0,
                         end: Union[int, float, str, datetime, date] = 0,
+                        adjust: str = 'none',
                         timeout: float = 30.0) -> List[Kline]:
         self._ensure_connected()
-        return self._client.get_kline_range(symbol, period=period, start=start, end=end, timeout=timeout)
+        return self._client.get_kline_range(
+            symbol, period=period, start=start, end=end, adjust=adjust, timeout=timeout)
 
     def get_kline_for_day(self, symbol: str, day: Union[str, date, datetime],
-                          period: str = '1d', timeout: float = 30.0) -> List[Kline]:
+                          period: str = '1d', timeout: float = 30.0,
+                          adjust: str = 'none') -> List[Kline]:
         self._ensure_connected()
-        return self._client.get_kline_for_day(symbol, day, period=period, timeout=timeout)
+        return self._client.get_kline_for_day(symbol, day, period=period, timeout=timeout, adjust=adjust)
 
-    def get_kline_for_today(self, symbol: str, period: str = '1d', timeout: float = 30.0) -> List[Kline]:
+    def get_kline_for_today(self, symbol: str, period: str = '1d', timeout: float = 30.0,
+                            adjust: str = 'none') -> List[Kline]:
         self._ensure_connected()
-        return self._client.get_kline_for_today(symbol, period=period, timeout=timeout)
+        return self._client.get_kline_for_today(symbol, period=period, timeout=timeout, adjust=adjust)
 
     def get_kline_by_count(self, symbol: str, period: str = '1d',
-                           count: int = 100, timeout: float = 30.0) -> List[Kline]:
+                           count: int = 100, timeout: float = 30.0,
+                           adjust: str = 'none') -> List[Kline]:
         self._ensure_connected()
-        return self._client.get_kline_by_count(symbol, period=period, count=count, timeout=timeout)
+        return self._client.get_kline_by_count(
+            symbol, period=period, count=count, timeout=timeout, adjust=adjust)
 
     def get_finance(self, stock_code: str, report_period: str = '',
                     query_type: int = 4, timeout: float = 30.0) -> FinanceData:

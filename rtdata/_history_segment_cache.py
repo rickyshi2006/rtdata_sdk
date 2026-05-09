@@ -71,7 +71,7 @@ class _FileLock:
 
 
 class HistorySegmentCache:
-    """按 symbol + period 维护纯文件分段历史缓存。"""
+    """按 symbol + period + adjust 维护纯文件分段历史缓存。"""
 
     def __init__(self, cache_dir: Optional[str] = None, enabled: bool = True,
                  tail_refresh_bars: int = 1):
@@ -89,21 +89,23 @@ class HistorySegmentCache:
         return self._enabled
 
     def get_missing_ranges(self, symbol: str, period: str,
+                           adjust: str,
                            start_ms: int, end_exclusive_ms: int) -> List[Tuple[int, int]]:
         if not self.enabled or start_ms <= 0 or end_exclusive_ms <= start_ms:
             return [(start_ms, end_exclusive_ms)]
 
-        with self._series_guard(symbol, period) as series_dir:
-            index = self._load_index(series_dir, symbol, period)
+        with self._series_guard(symbol, period, adjust) as series_dir:
+            index = self._load_index(series_dir, symbol, period, adjust)
             coverages = self._effective_coverages(index, period)
             return self._difference([(start_ms, end_exclusive_ms)], coverages)
 
-    def load_range(self, symbol: str, period: str, start_ms: int, end_ms: int) -> List[KlineRow]:
+    def load_range(self, symbol: str, period: str, adjust: str,
+                   start_ms: int, end_ms: int) -> List[KlineRow]:
         if not self.enabled or start_ms <= 0 or end_ms < start_ms:
             return []
 
-        with self._series_guard(symbol, period) as series_dir:
-            index = self._load_index(series_dir, symbol, period)
+        with self._series_guard(symbol, period, adjust) as series_dir:
+            index = self._load_index(series_dir, symbol, period, adjust)
             relevant = [
                 seg for seg in index["segments"]
                 if int(seg["start_ms"]) <= end_ms and int(seg["end_ms"]) > start_ms
@@ -117,7 +119,7 @@ class HistorySegmentCache:
 
         return [merged[ts] for ts in sorted(merged)]
 
-    def store_range(self, symbol: str, period: str,
+    def store_range(self, symbol: str, period: str, adjust: str,
                     request_start_ms: int, request_end_exclusive_ms: int,
                     klines: Iterable[KlineRow]):
         if not self.enabled or request_start_ms <= 0 or request_end_exclusive_ms <= request_start_ms:
@@ -127,8 +129,8 @@ class HistorySegmentCache:
         rows = self._normalize_rows(klines)
         fetched_at_ms = self._now_ms()
 
-        with self._series_guard(symbol, period) as series_dir:
-            index = self._load_index(series_dir, symbol, period)
+        with self._series_guard(symbol, period, adjust) as series_dir:
+            index = self._load_index(series_dir, symbol, period, adjust)
             segments_dir = series_dir / "segments"
             segments_dir.mkdir(parents=True, exist_ok=True)
 
@@ -157,26 +159,27 @@ class HistorySegmentCache:
             self._save_index(series_dir, index)
 
     @contextmanager
-    def _series_guard(self, symbol: str, period: str):
-        series_key = f"{symbol}::{period}"
+    def _series_guard(self, symbol: str, period: str, adjust: str):
+        series_key = f"{symbol}::{period}::{adjust}"
         with self._locks_guard:
             lock = self._series_locks.setdefault(series_key, threading.Lock())
         with lock:
-            series_dir = self._series_dir(symbol, period)
+            series_dir = self._series_dir(symbol, period, adjust)
             series_dir.mkdir(parents=True, exist_ok=True)
             lock_path = series_dir / "locks" / "cache.lock"
             with _FileLock(lock_path):
                 yield series_dir
 
-    def _series_dir(self, symbol: str, period: str) -> Path:
+    def _series_dir(self, symbol: str, period: str, adjust: str) -> Path:
         safe_symbol = symbol.replace("/", "_")
         safe_period = period.replace("/", "_")
-        return self._root_dir / safe_symbol / safe_period
+        safe_adjust = adjust.replace("/", "_")
+        return self._root_dir / safe_symbol / safe_period / safe_adjust
 
     def _index_path(self, series_dir: Path) -> Path:
         return series_dir / "index.json"
 
-    def _load_index(self, series_dir: Path, symbol: str, period: str) -> dict:
+    def _load_index(self, series_dir: Path, symbol: str, period: str, adjust: str) -> dict:
         self._cleanup_temp_files(series_dir / "segments")
         index_path = self._index_path(series_dir)
         if index_path.exists():
@@ -191,7 +194,7 @@ class HistorySegmentCache:
                     return index
             except Exception as exc:
                 logger.warning("Failed to load history index for %s %s: %s", symbol, period, exc)
-        index = self._rebuild_index(series_dir, symbol, period)
+        index = self._rebuild_index(series_dir, symbol, period, adjust)
         self._save_index(series_dir, index)
         return index
 
@@ -205,7 +208,7 @@ class HistorySegmentCache:
             os.fsync(f.fileno())
         os.replace(temp_path, index_path)
 
-    def _rebuild_index(self, series_dir: Path, symbol: str, period: str) -> dict:
+    def _rebuild_index(self, series_dir: Path, symbol: str, period: str, adjust: str) -> dict:
         segments = self._scan_segments(series_dir)
         coverage = [
             {
@@ -219,6 +222,7 @@ class HistorySegmentCache:
             "schema_version": SCHEMA_VERSION,
             "symbol": symbol,
             "period": period,
+            "adjust": adjust,
             "tail_refresh_bars": self._tail_refresh_bars,
             "segments": segments,
             "coverage": self._merge_coverages(coverage),

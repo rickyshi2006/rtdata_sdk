@@ -65,6 +65,12 @@ PERIOD_MAP = {
     '1h': 5, '1d': 6, '1w': 7, '1M': 8,
 }
 
+ADJUST_MAP = {
+    'none': 0,
+    'forward': 1,
+    'backward': 2,
+}
+
 # 查询消息类型: request → response
 QUERY_RESPONSE_MAP = {
     MsgType.HISTORY_REQUEST: MsgType.HISTORY_RESPONSE,
@@ -216,15 +222,20 @@ def decode_snapshot(payload: bytes, header_symbol_id: int):
 
 def encode_history_request(request_id: int, symbol_id: int, period_str: str,
                            start_time: int, end_time: int,
-                           max_count: int, symbol_code: str) -> bytes:
+                           max_count: int, symbol_code: str,
+                           adjust: str = 'none') -> bytes:
     """构建 HISTORY_REQUEST 完整消息
 
-    payload 格式 (29 + 2 + code_len):
+    payload 格式 (29 + 2 + code_len [+ adjust]):
       request_id(4) + symbol_id(4) + period(1)
       + start_time(8) + end_time(8) + max_count(4)
       + code_len(2) + code(N)
+      + adjust(1, 可选扩展: 0=none, 1=forward, 2=backward)
     """
     period = PERIOD_MAP.get(period_str, 1)
+    adjust_code = ADJUST_MAP.get(adjust)
+    if adjust_code is None:
+        raise ValueError(f'Unsupported adjust value: {adjust}')
     logger.debug(f"encode_history_request: period_str={period_str} -> period={period}")
     code_bytes = symbol_code.encode('utf-8')
 
@@ -234,6 +245,7 @@ def encode_history_request(request_id: int, symbol_id: int, period_str: str,
     payload += struct.pack('!I', max_count)
     payload += struct.pack('!H', len(code_bytes))
     payload += code_bytes
+    payload += struct.pack('B', adjust_code)
 
     return build_message(MsgType.HISTORY_REQUEST, 0, payload)
 
