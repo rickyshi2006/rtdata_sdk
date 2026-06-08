@@ -31,7 +31,7 @@ pip install -e .
 安装打包产物：
 
 ```bash
-pip install rtdata-0.1.5-py3-none-any.whl
+pip install rtdata-0.1.6-py3-none-any.whl
 ```
 
 ## Token 兑换

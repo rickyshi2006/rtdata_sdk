@@ -12,7 +12,7 @@
 - 本地历史分段二进制缓存
 - 自动重连与自动恢复订阅
 
-当前版本：`0.1.5`
+当前版本：`0.1.6`
 
 ## 1.1 当前支持范围
 
@@ -34,7 +34,7 @@ pip install -e .
 ### 2.2 安装 wheel
 
 ```bash
-pip install rtdata-0.1.5-py3-none-any.whl
+pip install rtdata-0.1.6-py3-none-any.whl
 ```
 
 ## 3. 两套入口
