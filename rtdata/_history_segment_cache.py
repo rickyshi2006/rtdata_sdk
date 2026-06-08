@@ -133,23 +133,25 @@ class HistorySegmentCache:
 
         with self._series_guard(symbol, period, adjust) as series_dir:
             index = self._load_index(series_dir, symbol, period, adjust)
+            if not rows:
+                return
+
             segments_dir = series_dir / "segments"
             segments_dir.mkdir(parents=True, exist_ok=True)
 
-            if rows:
-                seg_start_ms = rows[0][0]
-                seg_end_ms = rows[-1][0] + max(period_ms, 1)
-                final_name = f"{seg_start_ms}_{seg_end_ms}_{len(rows)}_{fetched_at_ms}.rtk"
-                temp_name = final_name + ".part"
-                self._write_segment(segments_dir / temp_name, rows, seg_start_ms, seg_end_ms)
-                os.replace(segments_dir / temp_name, segments_dir / final_name)
-                index["segments"].append({
-                    "file": final_name,
-                    "start_ms": seg_start_ms,
-                    "end_ms": seg_end_ms,
-                    "rows": len(rows),
-                    "created_at_ms": fetched_at_ms,
-                })
+            seg_start_ms = rows[0][0]
+            seg_end_ms = rows[-1][0] + max(period_ms, 1)
+            final_name = f"{seg_start_ms}_{seg_end_ms}_{len(rows)}_{fetched_at_ms}.rtk"
+            temp_name = final_name + ".part"
+            self._write_segment(segments_dir / temp_name, rows, seg_start_ms, seg_end_ms)
+            os.replace(segments_dir / temp_name, segments_dir / final_name)
+            index["segments"].append({
+                "file": final_name,
+                "start_ms": seg_start_ms,
+                "end_ms": seg_end_ms,
+                "rows": len(rows),
+                "created_at_ms": fetched_at_ms,
+            })
 
             index["coverage"].append({
                 "start_ms": request_start_ms,
@@ -193,6 +195,9 @@ class HistorySegmentCache:
                     index.setdefault("segments", [])
                     index["segments"] = self._filter_valid_segments(series_dir, index["segments"])
                     index["coverage"] = self._merge_coverages(index["coverage"])
+                    if not index["segments"] and index["coverage"]:
+                        index["coverage"] = []
+                        self._save_index(series_dir, index)
                     return index
             except Exception as exc:
                 logger.warning("Failed to load history index for %s %s: %s", symbol, period, exc)
