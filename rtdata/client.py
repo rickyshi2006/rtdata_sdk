@@ -406,7 +406,7 @@ class RtdataClient:
                 raise DisconnectedError(entry['error'])
             raise QueryError(entry['error'])
 
-        return [Kline(*k) for k in entry['klines']]
+        return [Kline(*k, symbol=symbol) for k in entry['klines']]
 
     def _get_history_with_local_cache(self, symbol: str, period: str, adjust: str,
                                       start_ms: int, end_exclusive_ms: int,
@@ -445,7 +445,7 @@ class RtdataClient:
 
         cached_rows = self._history_cache.load_range(
             symbol, period, adjust, start_ms, end_exclusive_ms - 1)
-        return [Kline(*row) for row in cached_rows]
+        return [Kline(*row, symbol=symbol) for row in cached_rows]
 
     def get_kline(self, symbol: str, period: str = '1d',
                   start: Union[int, float, str, datetime, date] = 0,

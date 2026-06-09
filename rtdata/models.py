@@ -43,9 +43,11 @@ class Kline:
     volume: int
     turnover: float     # 成交额
     open_interest: int  # 持仓量
+    symbol: str = ""    # 品种代码，如 "rb2610.SHF"
 
     def __str__(self):
-        return (f"Kline(ts={self.timestamp}, O={self.open:.4f}, H={self.high:.4f}, "
+        prefix = f"{self.symbol} " if self.symbol else ""
+        return (f"Kline({prefix}ts={self.timestamp}, O={self.open:.4f}, H={self.high:.4f}, "
                 f"L={self.low:.4f}, C={self.close:.4f}, V={self.volume})")
 
 

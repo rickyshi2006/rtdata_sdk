@@ -31,7 +31,7 @@ pip install -e .
 安装打包产物：
 
 ```bash
-pip install rtdata-0.1.6-py3-none-any.whl
+pip install rtdata-0.1.7-py3-none-any.whl
 ```
 
 ## Token 兑换
@@ -236,7 +236,7 @@ print(api.last_subscribe_rejected)
 主要数据结构字段：
 
 - `Quote`：`symbol`、`symbol_id`、`bid`、`ask`、`last`、`volume`、`timestamp`，以及可选的高低开收、成交额和五档字段
-- `Kline`：`timestamp`、`open`、`high`、`low`、`close`、`volume`、`turnover`、`open_interest`
+- `Kline`：`symbol`、`timestamp`、`open`、`high`、`low`、`close`、`volume`、`turnover`、`open_interest`
 - `FinanceData`：`stock_code`、`report_period`、`data`
 
 ## 资源释放
