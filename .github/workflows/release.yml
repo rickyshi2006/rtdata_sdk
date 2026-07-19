@@ -1,0 +1,47 @@
+name: Release rtdata SDK
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Validate tag and package version
+        shell: bash
+        run: |
+          PACKAGE_VERSION="$(python -c 'from rtdata._version import __version__; print(__version__)')"
+          if [[ ! "${PACKAGE_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([ab]|rc)[0-9]+$ &&
+                ! "${PACKAGE_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Unsupported release version: ${PACKAGE_VERSION}"
+            exit 1
+          fi
+          test "v${PACKAGE_VERSION}" = "${GITHUB_REF_NAME}"
+      - name: Test
+        run: python -m unittest discover -s tests -v
+      - name: Build immutable package artifacts
+        run: |
+          python -m pip install --upgrade build
+          python -m build
+          sha256sum dist/* > dist/SHA256SUMS
+      - name: Verify wheel in a clean environment
+        run: |
+          python -m venv /tmp/rtdata-release-test
+          /tmp/rtdata-release-test/bin/pip install dist/*.whl
+          /tmp/rtdata-release-test/bin/python -c "import rtdata; print(rtdata.__version__)"
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.whl
+            dist/*.tar.gz
+            dist/SHA256SUMS
+          generate_release_notes: true

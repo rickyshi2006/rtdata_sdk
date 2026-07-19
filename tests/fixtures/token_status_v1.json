@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "sequence": 10001,
+  "status": "expiring",
+  "severity": "warning",
+  "reason": "login",
+  "server_time_ms": 1784457600000,
+  "expires_ms": 1787049600000,
+  "message": "Token expires soon"
+}

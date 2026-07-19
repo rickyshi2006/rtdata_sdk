@@ -410,6 +410,14 @@ def on_error(err):
 - `on_connect`：首次连接成功或重连恢复成功
 - `on_disconnect`：连接被断开
 - `on_error`：订阅部分失败等非致命错误提示
+- `on_token_status`：Token 有效、即将到期、过期、禁用或撤销通知
+
+```python
+@api.on_token_status
+def on_token_status(status):
+    print(status.status)
+    print(status.expires_at)
+```
 
 ## 11. 自动重连行为
 

@@ -24,7 +24,7 @@ from . import _protocol as proto
 from ._connection import Connection
 from ._history_segment_cache import HistorySegmentCache
 from ._symbol_map import SymbolMap
-from .models import Quote, Kline, FinanceData
+from .models import Quote, Kline, FinanceData, TokenStatus
 from .exceptions import (
     AuthenticationError, ConnectionError, SymbolNotFoundError,
     QueryTimeoutError, QueryError, DiscoveryError, DisconnectedError,
@@ -56,6 +56,8 @@ class RtdataClient:
         self._port = port
         self._api_url = api_url
         self._current_node_id = ""
+        self._gateway_version = ""
+        self._protocol_features: List[str] = []
         self._heartbeat_interval = heartbeat_interval
         self._auto_reconnect = auto_reconnect
         self._async_callbacks = async_callbacks
@@ -73,11 +75,14 @@ class RtdataClient:
         self._connect_callbacks: List[Callable] = []
         self._disconnect_callbacks: List[Callable] = []
         self._error_callbacks: List[Callable] = []
+        self._token_status_callbacks: List[Callable] = []
 
         self._authenticated = False
         self._auth_event = threading.Event()
         self._auth_success = False
         self._auth_error = ""
+        self._token_status_lock = threading.Lock()
+        self._token_status: Optional[TokenStatus] = None
         self._symbol_map_event = threading.Event()
         self._subscribed_codes: List[str] = []
         self._pending_subscribe_codes: List[str] = []
@@ -140,6 +145,13 @@ class RtdataClient:
     def on_error(self):
         def decorator(fn: Callable):
             self._error_callbacks.append(fn)
+            return fn
+        return decorator
+
+    @property
+    def on_token_status(self):
+        def decorator(fn: Callable):
+            self._token_status_callbacks.append(fn)
             return fn
         return decorator
 
@@ -206,6 +218,15 @@ class RtdataClient:
         self._host = info['tcp_host']
         self._port = info['tcp_port']
         self._current_node_id = info.get('node_id', "") or ""
+        self._gateway_version = info.get('gateway_version', "") or ""
+        protocol_info = info.get('protocol', {})
+        if isinstance(protocol_info, dict):
+            features = protocol_info.get('features_enabled', [])
+            self._protocol_features = (
+                [str(value) for value in features]
+                if isinstance(features, list)
+                else []
+            )
         remote_version = info.get('symbol_map_version', 0)
 
         logger.info(
@@ -577,6 +598,8 @@ class RtdataClient:
             logger.debug(f"Subscribe response received: {len(ids)} symbols")
         elif msg_type == proto.MsgType.HEARTBEAT:
             pass
+        elif msg_type == proto.MsgType.TOKEN_STATUS:
+            self._handle_token_status(payload)
         elif msg_type == proto.MsgType.HISTORY_RESPONSE:
             logger.info(f"Received HISTORY_RESPONSE, payload_len={len(payload)}")
             self._handle_history_response(payload)
@@ -590,11 +613,49 @@ class RtdataClient:
         logger.debug(f"AUTH_RESPONSE payload_len={len(payload)} success={success} error='{error_msg}'")
         self._auth_success = success
         self._auth_error = error_msg
+        if success:
+            with self._token_status_lock:
+                self._token_status = None
         self._auth_event.set()
         if success:
             logger.info("Authenticated")
         else:
             logger.error(f"Auth failed: {error_msg}")
+
+    def _handle_token_status(self, payload: bytes):
+        try:
+            status = proto.decode_token_status(payload)
+        except ValueError as exc:
+            message = f"Invalid TOKEN_STATUS message: {exc}"
+            logger.warning(message)
+            for cb in self._error_callbacks:
+                try:
+                    cb(message)
+                except Exception as callback_exc:
+                    logger.error(f"Error callback failed: {callback_exc}")
+            return
+
+        with self._token_status_lock:
+            self._token_status = status
+
+        expires_at = status.expires_at
+        expiry_text = expires_at.isoformat() if expires_at is not None else "never"
+        log_message = (
+            f"Token status={status.status} severity={status.severity} "
+            f"reason={status.reason} expires_at={expiry_text}"
+        )
+        if status.severity == 'critical' or status.status in {'expired', 'disabled', 'revoked'}:
+            logger.error(log_message)
+        elif status.severity == 'warning' or status.status == 'expiring':
+            logger.warning(log_message)
+        else:
+            logger.info(log_message)
+
+        for cb in self._token_status_callbacks:
+            try:
+                cb(status)
+            except Exception as exc:
+                logger.error(f"Token status callback failed: {exc}")
 
     def _handle_symbol_map(self, payload: bytes):
         self._symbol_map.update_from_payload(payload)
@@ -828,6 +889,31 @@ class RtdataClient:
     @property
     def current_node_id(self) -> str:
         return self._current_node_id
+
+    @property
+    def gateway_version(self) -> str:
+        return self._gateway_version
+
+    @property
+    def protocol_features(self) -> List[str]:
+        return list(self._protocol_features)
+
+    @property
+    def token_status(self) -> Optional[TokenStatus]:
+        with self._token_status_lock:
+            return self._token_status
+
+    @property
+    def token_expires_ms(self) -> Optional[int]:
+        status = self.token_status
+        if status is None or status.never_expires:
+            return None
+        return status.expires_ms
+
+    @property
+    def token_expires_at(self):
+        status = self.token_status
+        return status.expires_at if status is not None else None
 
     @property
     def current_endpoint(self) -> str:

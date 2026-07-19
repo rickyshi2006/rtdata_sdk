@@ -223,6 +223,26 @@ print(api.last_subscribe_rejected)
 - `DisconnectedError`：连接中断导致查询失败
 - `ProtocolError`：协议解析错误
 
+## Token 状态通知
+
+支持新网关的 `TOKEN_STATUS` 通知时，可以注册独立回调：
+
+```python
+@api.on_token_status
+def on_token_status(status):
+    print(status.status, status.severity, status.expires_at)
+```
+
+也可以读取最后一次状态：
+
+```python
+print(api.token_status)
+print(api.token_expires_at)
+```
+
+旧网关不会发送该消息，新 SDK 仍可正常连接，此时
+`api.token_status` 为 `None`。详细说明见 `docs/TOKEN_STATUS.md`。
+
 ## 返回格式
 
 - `subscribe()`：无返回值；实时数据通过 `@api.on_quote` 回调推送，回调参数类型是 `Quote`
