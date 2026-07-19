@@ -167,7 +167,9 @@ class RtdataClient:
         self._auth_error = ""
         self._auth_event.clear()
         logger.debug("Sending AUTH message")
-        self._conn.send(proto.encode_auth(self._token))
+        if not self._conn.send(proto.encode_auth(self._token)):
+            self._conn.close()
+            raise ConnectionError("Connection lost while sending authentication")
 
         while not self._auth_event.wait(timeout=0.1):
             logger.debug("Waiting for AUTH_RESPONSE...")
@@ -191,6 +193,10 @@ class RtdataClient:
             logger.info("Symbol map already loaded via discovery API")
         elif not self._symbol_map_event.wait(timeout=timeout):
             logger.warning("Symbol map not received, using cache if available")
+
+        if not self._conn or not self._conn.connected:
+            self._authenticated = False
+            raise ConnectionError("Connection lost during initial state restore")
 
         self._authenticated = True
         logger.info(
@@ -246,7 +252,15 @@ class RtdataClient:
 
     @property
     def is_connected(self) -> bool:
-        return self._conn is not None and self._conn.connected
+        return (
+            self._authenticated
+            and self._conn is not None
+            and self._conn.connected
+        )
+
+    @property
+    def is_reconnecting(self) -> bool:
+        return self._conn is not None and self._conn.reconnecting
 
     def subscribe(self, symbols: List[str]):
         if not self._authenticated:
@@ -755,7 +769,8 @@ class RtdataClient:
         self._auth_error = ""
         self._auth_event.clear()
         self._symbol_map_event.clear()
-        self._conn.send(proto.encode_auth(self._token))
+        if not self._conn or not self._conn.send(proto.encode_auth(self._token)):
+            raise RuntimeError("Connection lost while sending re-authentication")
 
         if not self._auth_event.wait(timeout=30):
             if not self._conn or not self._conn.connected:
@@ -767,7 +782,13 @@ class RtdataClient:
             raise RuntimeError(f"Re-auth failed: {self._auth_error}")
 
         if not self._symbol_map_event.wait(timeout=30):
+            if not self._conn or not self._conn.connected:
+                raise RuntimeError(
+                    "Connection lost while waiting for symbol map after reconnect")
             logger.warning("Symbol map not received after reconnect, using cached map")
+
+        if not self._conn or not self._conn.connected:
+            raise RuntimeError("Connection lost during reconnect state restore")
 
         if self._symbol_map.size == 0:
             raise RuntimeError("Symbol map is empty after reconnect, cannot restore subscriptions")
@@ -779,10 +800,17 @@ class RtdataClient:
         if codes:
             ids = self._symbol_map.codes_to_ids(codes)
             if ids:
-                self._conn.send(proto.encode_subscribe(ids))
+                if not self._conn.send(proto.encode_subscribe(ids)):
+                    self._authenticated = False
+                    raise RuntimeError(
+                        "Connection lost while restoring subscriptions")
                 logger.info(f"Re-subscribed {len(ids)} symbols after reconnect")
             else:
                 raise RuntimeError(f"codes_to_ids returned empty for {codes}")
+
+        if not self._conn.connected:
+            self._authenticated = False
+            raise RuntimeError("Connection lost before reconnect completed")
 
         for cb in self._connect_callbacks:
             try:

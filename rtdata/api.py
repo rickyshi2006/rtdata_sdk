@@ -24,6 +24,7 @@ from typing import Optional, List, Union
 
 from .client import RtdataClient
 from .models import Quote, Kline, FinanceData
+from .exceptions import ConnectionError
 
 logger = logging.getLogger(__name__)
 
@@ -53,9 +54,13 @@ class API:
         self._connected = False
 
     def _ensure_connected(self):
-        if not self._connected:
-            self._client.connect()
+        if self._client.is_connected:
             self._connected = True
+            return
+        if self._client.is_reconnecting:
+            raise ConnectionError("Connection is reconnecting")
+        self._client.connect()
+        self._connected = True
 
     def connect(self):
         """显式建立连接。"""
@@ -204,6 +209,11 @@ class API:
     @property
     def current_endpoint(self) -> str:
         return self._client.current_endpoint
+
+    @property
+    def is_connected(self) -> bool:
+        """当前是否存在已认证且可用的底层连接。"""
+        return self._client.is_connected
 
     def close(self):
         if self._connected:
