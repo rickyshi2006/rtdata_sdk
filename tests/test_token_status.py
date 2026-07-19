@@ -70,6 +70,67 @@ class TokenStatusClientTest(unittest.TestCase):
         client._dispatch_message(proto.MsgType.AUTH_RESPONSE, 0, b"\x01")
         self.assertIsNone(client.token_status)
 
+    def test_terminal_status_suspends_auto_reconnect(self):
+        class FakeConnection:
+            def __init__(self):
+                self.suspended = False
+
+            def suspend_auto_reconnect(self):
+                self.suspended = True
+
+        client = RtdataClient(token="test", async_callbacks=False)
+        connection = FakeConnection()
+        client._conn = connection
+        client._authenticated = True
+        raw = json.loads(FIXTURE.read_text(encoding="utf-8"))
+        raw["status"] = "expired"
+        raw["severity"] = "critical"
+
+        client._dispatch_message(
+            proto.MsgType.TOKEN_STATUS,
+            0,
+            json.dumps(raw).encode("utf-8"),
+        )
+
+        self.assertFalse(client._authenticated)
+        self.assertTrue(connection.suspended)
+
+    def test_expiring_status_keeps_auto_reconnect_enabled(self):
+        class FakeConnection:
+            def __init__(self):
+                self.suspended = False
+
+            def suspend_auto_reconnect(self):
+                self.suspended = True
+
+        client = RtdataClient(token="test", async_callbacks=False)
+        connection = FakeConnection()
+        client._conn = connection
+        client._authenticated = True
+
+        client._dispatch_message(proto.MsgType.TOKEN_STATUS, 0, FIXTURE.read_bytes())
+
+        self.assertTrue(client._authenticated)
+        self.assertFalse(connection.suspended)
+
+    def test_terminal_auth_failure_suspends_auto_reconnect(self):
+        class FakeConnection:
+            def __init__(self):
+                self.suspended = False
+
+            def suspend_auto_reconnect(self):
+                self.suspended = True
+
+        client = RtdataClient(token="test", async_callbacks=False)
+        connection = FakeConnection()
+        client._conn = connection
+
+        client._dispatch_message(
+            proto.MsgType.AUTH_RESPONSE, 0, b"\x00Token has expired")
+
+        self.assertFalse(client._auth_success)
+        self.assertTrue(connection.suspended)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -53,6 +53,15 @@ class Connection:
     def connected(self) -> bool:
         return self._connected
 
+    @property
+    def reconnecting(self) -> bool:
+        return self._reconnecting
+
+    def suspend_auto_reconnect(self):
+        """停止当前自动重连；显式 connect() 仍可创建新连接。"""
+        with self._reconnect_lock:
+            self._auto_reconnect = False
+
     def connect(self, timeout: float = 10.0):
         """建立 TCP 连接"""
         self._stop_event.clear()
@@ -74,25 +83,34 @@ class Connection:
 
     def start_recv_loop(self):
         """启动接收线程和心跳线程"""
+        sock = self._sock
+        if sock is None:
+            raise ConnectionError("Cannot start receive loop without a socket")
         self._recv_thread = threading.Thread(
-            target=self._recv_loop, name='rtdata-recv', daemon=True)
+            target=self._recv_loop, args=(sock,),
+            name='rtdata-recv', daemon=True)
         self._recv_thread.start()
 
         self._heartbeat_thread = threading.Thread(
             target=self._heartbeat_loop, name='rtdata-heartbeat', daemon=True)
         self._heartbeat_thread.start()
 
-    def send(self, data: bytes):
-        """线程安全发送"""
+    def send(self, data: bytes) -> bool:
+        """线程安全发送，成功返回 True。"""
+        failed = False
         with self._send_lock:
             sock = self._sock
-            if sock is None:
-                return
+            if sock is None or not self._connected:
+                return False
             try:
                 sock.sendall(data)
+                return True
             except Exception as e:
                 logger.debug(f"Send failed: {e}")
-                self._handle_disconnect("send error")
+                failed = True
+        if failed:
+            self._handle_disconnect("send error", sock)
+        return False
 
     def close(self):
         """关闭连接和所有线程"""
@@ -115,12 +133,11 @@ class Connection:
     # 接收循环
     # ========================================================================
 
-    def _recv_loop(self):
+    def _recv_loop(self, sock: socket.socket):
         buf = bytearray()
-        while not self._stop_event.is_set():
+        while not self._stop_event.is_set() and self._auto_reconnect:
             try:
-                sock = self._sock
-                if sock is None:
+                if self._sock is not sock:
                     break
                 # 设置超时以便检查 stop_event
                 sock.settimeout(1.0)
@@ -129,7 +146,7 @@ class Connection:
                 except socket.timeout:
                     continue
                 if not chunk:
-                    self._handle_disconnect("connection closed by server")
+                    self._handle_disconnect("connection closed by server", sock)
                     return
 
                 logger.debug(f"Received {len(chunk)} bytes")
@@ -144,7 +161,7 @@ class Connection:
 
                     if payload_len > proto.MAX_PAYLOAD_SIZE:
                         logger.error(f"Invalid payload_length: {payload_len}")
-                        self._handle_disconnect("protocol error")
+                        self._handle_disconnect("protocol error", sock)
                         return
 
                     total_len = proto.HEADER_SIZE + payload_len
@@ -162,7 +179,7 @@ class Connection:
 
             except Exception as e:
                 if not self._stop_event.is_set():
-                    self._handle_disconnect(f"recv error: {e}")
+                    self._handle_disconnect(f"recv error: {e}", sock)
                 return
 
     # ========================================================================
@@ -170,7 +187,7 @@ class Connection:
     # ========================================================================
 
     def _heartbeat_loop(self):
-        while not self._stop_event.is_set():
+        while not self._stop_event.is_set() and self._auto_reconnect:
             if self._stop_event.wait(timeout=self._heartbeat_interval):
                 break  # stop_event set
             if self._connected:
@@ -183,8 +200,11 @@ class Connection:
     # 断线重连
     # ========================================================================
 
-    def _handle_disconnect(self, reason: str):
+    def _handle_disconnect(self, reason: str,
+                           disconnected_sock: Optional[socket.socket] = None):
         with self._reconnect_lock:
+            if disconnected_sock is not None and self._sock is not disconnected_sock:
+                return
             if not self._connected:
                 return
             self._connected = False
@@ -194,8 +214,8 @@ class Connection:
                                 and not self._reconnecting)
 
         # 关闭旧 socket
-        sock = self._sock
-        self._sock = None
+            sock = self._sock
+            self._sock = None
         if sock:
             try:
                 sock.close()
@@ -213,14 +233,25 @@ class Connection:
             self._reconnect_loop()
 
     def _reconnect_loop(self):
-        with self._reconnect_lock:
-            self._reconnecting = True
-
-        try:
-            self._do_reconnect_loop()
-        finally:
+        while not self._stop_event.is_set():
             with self._reconnect_lock:
-                self._reconnecting = False
+                if self._reconnecting:
+                    return
+                self._reconnecting = True
+
+            try:
+                self._do_reconnect_loop()
+            finally:
+                with self._reconnect_lock:
+                    self._reconnecting = False
+                    reconnect_again = (
+                        self._auto_reconnect
+                        and not self._stop_event.is_set()
+                        and not self._connected
+                    )
+
+            if not reconnect_again:
+                return
 
     def _do_reconnect_loop(self):
         attempt = 0
@@ -246,8 +277,12 @@ class Connection:
 
                 self._do_connect(timeout=10.0)
                 # 重新启动接收循环（必须在认证之前启动，以便接收认证响应）
+                sock = self._sock
+                if sock is None:
+                    raise ConnectionError("Reconnect completed without a socket")
                 self._recv_thread = threading.Thread(
-                    target=self._recv_loop, name='rtdata-recv', daemon=True)
+                    target=self._recv_loop, args=(sock,),
+                    name='rtdata-recv', daemon=True)
                 self._recv_thread.start()
                 time.sleep(0.1)
 
@@ -276,6 +311,10 @@ class Connection:
                         continue
                 else:
                     logger.warning("No reconnect callback set!")
+
+                if not self._connected or self._sock is not sock:
+                    raise ConnectionError(
+                        "Connection lost while restoring reconnect state")
 
                 logger.info("Reconnected successfully")
                 return
