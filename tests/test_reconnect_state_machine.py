@@ -141,6 +141,29 @@ class ReconnectStateMachineTest(unittest.TestCase):
 
         self.assertFalse(api.is_connected)
 
+    def test_explicit_connect_closes_terminal_transport(self):
+        client = RtdataClient(token="test", async_callbacks=False)
+
+        class OldConnection:
+            def __init__(self):
+                self.closed = False
+
+            def close(self):
+                self.closed = True
+
+        old_connection = OldConnection()
+        client._conn = old_connection
+
+        with patch.object(client._symbol_map, "load_cache"), \
+                patch("rtdata.client.Connection") as connection_class:
+            connection = connection_class.return_value
+            connection.send.return_value = False
+            with self.assertRaisesRegex(
+                    Exception, "Connection lost while sending authentication"):
+                client.connect(timeout=0.1)
+
+        self.assertTrue(old_connection.closed)
+
 
 if __name__ == "__main__":
     unittest.main()

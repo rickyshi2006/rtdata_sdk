@@ -157,6 +157,9 @@ class RtdataClient:
         return decorator
 
     def connect(self, timeout: float = 15.0):
+        if self._conn is not None:
+            self._conn.close()
+            self._conn = None
         self._symbol_map.load_cache()
 
         if self._api_url:
