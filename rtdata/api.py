@@ -23,7 +23,7 @@ from datetime import date, datetime
 from typing import Optional, List, Union
 
 from .client import RtdataClient
-from .models import Quote, Kline, FinanceData
+from .models import Quote, Kline, FinanceData, TokenStatus
 
 logger = logging.getLogger(__name__)
 
@@ -165,6 +165,11 @@ class API:
     def on_error(self):
         return self._client.on_error
 
+    @property
+    def on_token_status(self):
+        """装饰器: 注册 Token 状态回调。"""
+        return self._client.on_token_status
+
     # ── 工具 ──────────────────────────────────────────────
 
     @property
@@ -200,6 +205,26 @@ class API:
     @property
     def current_node_id(self) -> str:
         return self._client.current_node_id
+
+    @property
+    def gateway_version(self) -> str:
+        return self._client.gateway_version
+
+    @property
+    def protocol_features(self) -> List[str]:
+        return self._client.protocol_features
+
+    @property
+    def token_status(self) -> Optional[TokenStatus]:
+        return self._client.token_status
+
+    @property
+    def token_expires_ms(self) -> Optional[int]:
+        return self._client.token_expires_ms
+
+    @property
+    def token_expires_at(self):
+        return self._client.token_expires_at
 
     @property
     def current_endpoint(self) -> str:

@@ -12,6 +12,9 @@
 import struct
 import time
 import logging
+import json
+
+from .models import TokenStatus
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +60,7 @@ class MsgType:
     UNSUBSCRIBE_REQUEST = 0x31
     AUTH_RESPONSE       = 0x40
     SUBSCRIBE_RESPONSE  = 0x41
+    TOKEN_STATUS        = 0x42
 
 
 # 周期映射: 字符串 → uint8
@@ -121,6 +125,55 @@ def decode_auth_response(payload: bytes):
     if len(payload) > 1:
         error_msg = payload[1:].decode('utf-8', errors='replace')
     return success, error_msg
+
+
+def decode_token_status(payload: bytes) -> TokenStatus:
+    """解析 TOKEN_STATUS v1；未知字段会被忽略。"""
+    if not payload:
+        raise ValueError("empty TOKEN_STATUS payload")
+    if len(payload) > 16 * 1024:
+        raise ValueError("TOKEN_STATUS payload too large")
+
+    try:
+        raw = json.loads(payload.decode('utf-8'))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"invalid TOKEN_STATUS JSON: {exc}") from exc
+
+    if not isinstance(raw, dict):
+        raise ValueError("TOKEN_STATUS payload must be an object")
+
+    required = (
+        'schema_version', 'sequence', 'status', 'severity', 'reason',
+        'server_time_ms', 'expires_ms', 'message',
+    )
+    missing = [name for name in required if name not in raw]
+    if missing:
+        raise ValueError(f"TOKEN_STATUS missing fields: {', '.join(missing)}")
+
+    integer_fields = ('schema_version', 'sequence', 'server_time_ms', 'expires_ms')
+    for name in integer_fields:
+        if not isinstance(raw[name], int) or isinstance(raw[name], bool):
+            raise ValueError(f"TOKEN_STATUS field {name} must be an integer")
+    for name in ('status', 'severity', 'reason', 'message'):
+        if not isinstance(raw[name], str):
+            raise ValueError(f"TOKEN_STATUS field {name} must be a string")
+    if raw['schema_version'] <= 0:
+        raise ValueError("TOKEN_STATUS schema_version must be positive")
+    if raw['sequence'] < 0:
+        raise ValueError("TOKEN_STATUS sequence must not be negative")
+    if raw['expires_ms'] < 0:
+        raise ValueError("TOKEN_STATUS expires_ms must not be negative")
+
+    return TokenStatus(
+        schema_version=raw['schema_version'],
+        sequence=raw['sequence'],
+        status=raw['status'],
+        severity=raw['severity'],
+        reason=raw['reason'],
+        server_time_ms=raw['server_time_ms'],
+        expires_ms=raw['expires_ms'],
+        message=raw['message'],
+    )
 
 
 # ============================================================================

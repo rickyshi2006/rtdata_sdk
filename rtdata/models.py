@@ -1,6 +1,36 @@
 """rtdata SDK 数据模型"""
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Optional, List
+
+
+@dataclass(frozen=True)
+class TokenStatus:
+    """云网关推送的 Token 状态。"""
+    schema_version: int
+    sequence: int
+    status: str
+    severity: str
+    reason: str
+    server_time_ms: int
+    expires_ms: int
+    message: str = ""
+
+    @property
+    def never_expires(self) -> bool:
+        return self.expires_ms <= 0
+
+    @property
+    def remaining_ms(self) -> Optional[int]:
+        if self.never_expires:
+            return None
+        return max(0, self.expires_ms - self.server_time_ms)
+
+    @property
+    def expires_at(self) -> Optional[datetime]:
+        if self.never_expires:
+            return None
+        return datetime.fromtimestamp(self.expires_ms / 1000.0, tz=timezone.utc)
 
 
 @dataclass

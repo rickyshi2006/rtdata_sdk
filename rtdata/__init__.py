@@ -10,7 +10,8 @@
 
 from .client import RtdataClient
 from .api import API
-from .models import Quote, Kline, FinanceData
+from .models import Quote, Kline, FinanceData, TokenStatus
+from ._version import __version__
 from .exceptions import (
     RtdataError,
     AuthenticationError,
@@ -23,14 +24,13 @@ from .exceptions import (
     DiscoveryError,
 )
 
-__version__ = '0.1.7'
-
 __all__ = [
     'API',
     'RtdataClient',
     'Quote',
     'Kline',
     'FinanceData',
+    'TokenStatus',
     'RtdataError',
     'AuthenticationError',
     'ConnectionError',
