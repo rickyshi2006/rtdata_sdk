@@ -57,6 +57,11 @@ class Connection:
     def reconnecting(self) -> bool:
         return self._reconnecting
 
+    def suspend_auto_reconnect(self):
+        """停止当前自动重连；显式 connect() 仍可创建新连接。"""
+        with self._reconnect_lock:
+            self._auto_reconnect = False
+
     def connect(self, timeout: float = 10.0):
         """建立 TCP 连接"""
         self._stop_event.clear()
@@ -130,7 +135,7 @@ class Connection:
 
     def _recv_loop(self, sock: socket.socket):
         buf = bytearray()
-        while not self._stop_event.is_set():
+        while not self._stop_event.is_set() and self._auto_reconnect:
             try:
                 if self._sock is not sock:
                     break
@@ -182,7 +187,7 @@ class Connection:
     # ========================================================================
 
     def _heartbeat_loop(self):
-        while not self._stop_event.is_set():
+        while not self._stop_event.is_set() and self._auto_reconnect:
             if self._stop_event.wait(timeout=self._heartbeat_interval):
                 break  # stop_event set
             if self._connected:

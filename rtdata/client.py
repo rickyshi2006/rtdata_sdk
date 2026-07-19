@@ -32,6 +32,7 @@ from .exceptions import (
 
 logger = logging.getLogger(__name__)
 VALID_ADJUSTS = {'none', 'forward', 'backward'}
+TERMINAL_TOKEN_STATUSES = {'expired', 'disabled', 'revoked'}
 
 
 class RtdataClient:
@@ -634,7 +635,16 @@ class RtdataClient:
         if success:
             logger.info("Authenticated")
         else:
+            if self._is_terminal_auth_error(error_msg) and self._conn:
+                self._conn.suspend_auto_reconnect()
             logger.error(f"Auth failed: {error_msg}")
+
+    @staticmethod
+    def _is_terminal_auth_error(error_msg: str) -> bool:
+        normalized = (error_msg or "").lower()
+        return any(value in normalized for value in (
+            "expired", "disabled", "revoked",
+        ))
 
     def _handle_token_status(self, payload: bytes):
         try:
@@ -651,6 +661,11 @@ class RtdataClient:
 
         with self._token_status_lock:
             self._token_status = status
+
+        if status.status in TERMINAL_TOKEN_STATUSES:
+            self._authenticated = False
+            if self._conn:
+                self._conn.suspend_auto_reconnect()
 
         expires_at = status.expires_at
         expiry_text = expires_at.isoformat() if expires_at is not None else "never"
