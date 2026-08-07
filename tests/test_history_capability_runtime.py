@@ -30,12 +30,16 @@ def decode_message(message):
 
 
 class HistoryCapabilityRuntimeTest(unittest.TestCase):
-    def make_client(self, connection=None, **kwargs):
-        client = RtdataClient(
-            token="test",
-            async_callbacks=False,
-            **kwargs,
-        )
+    def make_client(self, connection=None, zstd_available=True, **kwargs):
+        with patch(
+            "rtdata._history_capability_runtime.codec.zstd_available",
+            return_value=zstd_available,
+        ):
+            client = RtdataClient(
+                token="test",
+                async_callbacks=False,
+                **kwargs,
+            )
         client._conn = connection or FakeConnection()
         return client
 
@@ -78,6 +82,25 @@ class HistoryCapabilityRuntimeTest(unittest.TestCase):
         self.assertEqual(client.history_capability_state, "negotiated")
         self.assertTrue(client.history_v2_eligible)
         self.assertEqual(client.history_capabilities.max_block_bytes, 128 * 1024)
+
+    def test_missing_zstd_advertises_v1_without_breaking_connection(self):
+        connection = FakeConnection()
+        client = self.make_client(
+            connection,
+            zstd_available=False,
+            history_v2_advertise=True,
+            history_capability_ack_timeout=0.5,
+        )
+
+        client._dispatch_message(proto.MsgType.AUTH_RESPONSE, 0, b"\x01", 1)
+
+        self.assertEqual(len(connection.sent), 1)
+        offer = capabilities.HistoryCapabilities.decode(
+            decode_message(connection.sent[0])[2]
+        )
+        self.assertFalse(capabilities.v2_eligible(offer))
+        self.assertEqual(offer.history_protocol_mask, capabilities.PROTOCOL_V1)
+        self.assertTrue(connection.connected)
 
     def test_malformed_ack_falls_back_without_disconnect(self):
         connection = FakeConnection()

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Callable, Optional
 
 from . import _history_capabilities as capabilities
+from . import _history_v2_codec as codec
 
 
 @dataclass(frozen=True)
@@ -38,9 +39,15 @@ class HistoryCapabilityRuntime:
         self.default_enabled = default_enabled
         self.max_block_bytes = max_block_bytes
         self.ack_timeout = ack_timeout
-        self._local_offer = capabilities.v2_capabilities(
-            capabilities.CapabilityRole.RTDATA,
-            max_block_bytes=max_block_bytes,
+        self._local_offer = (
+            capabilities.v2_capabilities(
+                capabilities.CapabilityRole.RTDATA,
+                max_block_bytes=max_block_bytes,
+            )
+            if codec.zstd_available()
+            else capabilities.v1_capabilities(
+                capabilities.CapabilityRole.RTDATA
+            )
         )
         self._lock = threading.Lock()
         self._timer: Optional[threading.Timer] = None
