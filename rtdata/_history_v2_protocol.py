@@ -371,6 +371,8 @@ class HistoryEnd:
     def decode(cls, payload: bytes) -> "HistoryEnd":
         if len(payload) != END_STRUCT.size:
             raise ValueError("HISTORY_END payload must be exactly 40 bytes")
+        if payload[37:40] != b"\x00\x00\x00":
+            raise ValueError("HISTORY_END reserved fields must be zero")
         result = cls(*END_STRUCT.unpack(payload))
         result.validate()
         return result

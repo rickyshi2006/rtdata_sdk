@@ -14,6 +14,7 @@ import time
 import logging
 import json
 
+from . import _history_v2_protocol as history_v2_protocol
 from .models import TokenStatus
 
 logger = logging.getLogger(__name__)
@@ -285,7 +286,8 @@ def decode_snapshot(payload: bytes, header_symbol_id: int):
 def encode_history_request(request_id: int, symbol_id: int, period_str: str,
                            start_time: int, end_time: int,
                            max_count: int, symbol_code: str,
-                           adjust: str = 'none') -> bytes:
+                           adjust: str = 'none',
+                           history_v2_options: bytes = b'') -> bytes:
     """构建 HISTORY_REQUEST 完整消息
 
     payload 格式 (29 + 2 + code_len [+ adjust]):
@@ -293,6 +295,7 @@ def encode_history_request(request_id: int, symbol_id: int, period_str: str,
       + start_time(8) + end_time(8) + max_count(4)
       + code_len(2) + code(N)
       + adjust(1, 可选扩展: 0=none, 1=forward, 2=backward)
+      + History V2 options(24, 可选)
     """
     period = PERIOD_MAP.get(period_str, 1)
     adjust_code = ADJUST_MAP.get(adjust)
@@ -308,6 +311,9 @@ def encode_history_request(request_id: int, symbol_id: int, period_str: str,
     payload += struct.pack('!H', len(code_bytes))
     payload += code_bytes
     payload += struct.pack('B', adjust_code)
+    if history_v2_options:
+        history_v2_protocol.RequestOptions.decode(history_v2_options)
+        payload += history_v2_options
 
     return build_message(MsgType.HISTORY_REQUEST, 0, payload)
 

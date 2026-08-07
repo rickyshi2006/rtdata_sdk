@@ -195,10 +195,13 @@ def v2_eligible(capabilities: HistoryCapabilities) -> bool:
         capabilities.validate()
     except ValueError:
         return False
-    compressed = COMPRESSION_ZSTD | COMPRESSION_LZ4
+    required_features = (
+        FEATURE_WINDOW_UPDATE | FEATURE_CANCEL | FEATURE_OPTIONAL_COLUMNS
+    )
     return bool(
         capabilities.history_protocol_mask & PROTOCOL_V2
         and capabilities.codec_mask & CODEC_COLUMNAR_DELTA_V1
-        and capabilities.compression_mask & compressed
+        and capabilities.compression_mask & COMPRESSION_ZSTD
+        and capabilities.feature_mask & required_features == required_features
         and capabilities.column_schema_mask & SCHEMA_HISTORY_COLUMNS_V1
     )

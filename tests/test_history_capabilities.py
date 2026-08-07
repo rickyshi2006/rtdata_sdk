@@ -71,7 +71,9 @@ class HistoryCapabilitiesTest(unittest.TestCase):
                 capabilities.COMPRESSION_NONE | capabilities.COMPRESSION_ZSTD
             ),
             feature_mask=(
-                capabilities.FEATURE_WINDOW_UPDATE | capabilities.FEATURE_CANCEL
+                capabilities.FEATURE_WINDOW_UPDATE
+                | capabilities.FEATURE_CANCEL
+                | capabilities.FEATURE_OPTIONAL_COLUMNS
             ),
         )
 
@@ -81,6 +83,15 @@ class HistoryCapabilitiesTest(unittest.TestCase):
         self.assertEqual(intersection.compression_mask, cloud.compression_mask)
         self.assertEqual(intersection.feature_mask, cloud.feature_mask)
         self.assertTrue(capabilities.v2_eligible(intersection))
+
+        missing_required_feature = replace(
+            intersection,
+            feature_mask=(
+                capabilities.FEATURE_WINDOW_UPDATE
+                | capabilities.FEATURE_CANCEL
+            ),
+        )
+        self.assertFalse(capabilities.v2_eligible(missing_required_feature))
 
         fallback = capabilities.intersect_capabilities(
             intersection,

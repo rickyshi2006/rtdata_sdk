@@ -17,13 +17,16 @@ import threading
 import time
 import logging
 import queue
+import struct
 from datetime import datetime, date, time as dt_time
 from typing import Callable, Optional, List, Dict, Iterator, Tuple, Union
 
 from . import _protocol as proto
+from . import _history_v2_protocol as history_v2
 from ._connection import Connection
 from ._history_capability_runtime import HistoryCapabilityRuntime
 from ._history_segment_cache import HistorySegmentCache
+from ._history_v2_stream import HistoryV2RequestState
 from ._symbol_map import SymbolMap
 from .models import Quote, Kline, FinanceData, TokenStatus
 from .exceptions import (
@@ -35,6 +38,9 @@ logger = logging.getLogger(__name__)
 VALID_ADJUSTS = {'none', 'forward', 'backward'}
 TERMINAL_TOKEN_STATUSES = {'expired', 'disabled', 'revoked'}
 HISTORY_V1_PAGE_ROWS = 5000
+HISTORY_V2_PAGE_ROWS = 1_000_000
+HISTORY_V2_DECODE_QUEUE_SIZE = 32
+HISTORY_V2_MAX_RELAY_WINDOW_BYTES = 2 * 1024 * 1024
 
 
 class RtdataClient:
@@ -115,6 +121,12 @@ class RtdataClient:
         self._request_id_lock = threading.Lock()
         self._pending_queries: Dict[int, dict] = {}
         self._pending_lock = threading.Lock()
+        self._history_v2_worker_lock = threading.Lock()
+        self._history_v2_queue: "queue.Queue" = queue.Queue(
+            maxsize=HISTORY_V2_DECODE_QUEUE_SIZE
+        )
+        self._history_v2_worker_stop = threading.Event()
+        self._history_v2_worker: Optional[threading.Thread] = None
 
         self._stats_lock = threading.Lock()
         self._messages_received = 0
@@ -171,6 +183,11 @@ class RtdataClient:
 
     def connect(self, timeout: float = 15.0):
         if self._conn is not None:
+            self._abort_pending_queries(
+                "connection replaced",
+                cancel_reason=history_v2.CancelReason.SHUTDOWN,
+                send_cancel=True,
+            )
             self._conn.close()
             self._conn = None
         self._history_capability.reset("new_connection")
@@ -283,6 +300,11 @@ class RtdataClient:
 
     def close(self):
         self._authenticated = False
+        self._abort_pending_queries(
+            "client closed",
+            cancel_reason=history_v2.CancelReason.SHUTDOWN,
+            send_cancel=True,
+        )
         self._history_capability.reset("closed")
         self._callback_stop.set()
         if self._callback_thread and self._callback_thread.is_alive():
@@ -290,6 +312,7 @@ class RtdataClient:
         if self._conn:
             self._conn.close()
             self._conn = None
+        self._stop_history_v2_worker()
 
     def __enter__(self):
         self.connect()
@@ -428,6 +451,251 @@ class RtdataClient:
             raise ValueError(f'Unsupported datetime format: {value}')
         raise TypeError(f'Unsupported history time value: {value!r}')
 
+    def _select_history_v2_request(self):
+        snapshot = self._history_capability.snapshot()
+        if (
+            not self._history_capability.default_enabled
+            or not snapshot.v2_eligible
+        ):
+            return None, snapshot.generation
+
+        max_frame_block = (
+            HISTORY_V2_MAX_RELAY_WINDOW_BYTES
+            - history_v2.OUTER_HEADER_SIZE
+            - history_v2.DATA_HEADER_STRUCT.size
+        )
+        max_block_bytes = min(
+            self._history_capability.max_block_bytes,
+            snapshot.capabilities.max_block_bytes,
+            max_frame_block,
+        )
+        initial_window_bytes = max(
+            history_v2.DEFAULT_INITIAL_WINDOW_BYTES,
+            history_v2.OUTER_HEADER_SIZE
+            + history_v2.DATA_HEADER_STRUCT.size
+            + max_block_bytes,
+        )
+        options = history_v2.RequestOptions(
+            max_block_bytes=max_block_bytes,
+            initial_window_bytes=initial_window_bytes,
+        )
+        options.validate()
+        return options, snapshot.generation
+
+    def _ensure_history_v2_worker(self):
+        with self._history_v2_worker_lock:
+            if (
+                self._history_v2_worker is not None
+                and self._history_v2_worker.is_alive()
+            ):
+                return
+            self._history_v2_queue = queue.Queue(
+                maxsize=HISTORY_V2_DECODE_QUEUE_SIZE
+            )
+            self._history_v2_worker_stop = threading.Event()
+            work_queue = self._history_v2_queue
+            stop_event = self._history_v2_worker_stop
+            self._history_v2_worker = threading.Thread(
+                target=self._history_v2_worker_loop,
+                args=(work_queue, stop_event),
+                name='rtdata-history-v2',
+                daemon=True,
+            )
+            self._history_v2_worker.start()
+
+    def _stop_history_v2_worker(self):
+        with self._history_v2_worker_lock:
+            worker = self._history_v2_worker
+            if worker is None:
+                return
+            self._history_v2_worker_stop.set()
+            try:
+                self._history_v2_queue.put_nowait(None)
+            except queue.Full:
+                pass
+        if worker.is_alive() and worker is not threading.current_thread():
+            worker.join(timeout=3)
+        with self._history_v2_worker_lock:
+            if self._history_v2_worker is worker:
+                self._history_v2_worker = None
+
+    def _history_v2_worker_loop(self, work_queue, stop_event):
+        while not stop_event.is_set():
+            try:
+                item = work_queue.get(timeout=0.2)
+            except queue.Empty:
+                continue
+            if item is None:
+                return
+            msg_type, payload, connection_generation = item
+            try:
+                self._process_history_v2_frame(
+                    msg_type, payload, connection_generation
+                )
+            except Exception as exc:
+                logger.exception("History V2 worker failure: %s", exc)
+
+    def _enqueue_history_v2_frame(
+        self,
+        msg_type: int,
+        payload: bytes,
+        connection_generation: Optional[int],
+    ):
+        if len(payload) < 4:
+            logger.warning("Ignoring History V2 frame without request_id")
+            return
+        request_id = struct.unpack_from('!I', payload)[0]
+        with self._pending_lock:
+            entry = self._pending_queries.get(request_id)
+        if entry is None or entry.get('history_version') != 2:
+            logger.debug(
+                "No pending History V2 query for request_id=%s", request_id
+            )
+            return
+        if (
+            connection_generation is not None
+            and entry['connection_generation'] != connection_generation
+        ):
+            return
+
+        self._ensure_history_v2_worker()
+        try:
+            self._history_v2_queue.put_nowait(
+                (msg_type, payload, connection_generation)
+            )
+        except queue.Full:
+            self._fail_history_v2_entry(
+                request_id,
+                entry,
+                "History V2 decode queue is full",
+                history_v2.CancelReason.BACKPRESSURE,
+            )
+
+    def _process_history_v2_frame(
+        self,
+        msg_type: int,
+        payload: bytes,
+        connection_generation: Optional[int],
+    ):
+        if len(payload) < 4:
+            return
+        request_id = struct.unpack_from('!I', payload)[0]
+        with self._pending_lock:
+            entry = self._pending_queries.get(request_id)
+        if entry is None or entry.get('history_version') != 2:
+            return
+        if (
+            connection_generation is not None
+            and entry['connection_generation'] != connection_generation
+        ):
+            return
+
+        state: HistoryV2RequestState = entry['v2_state']
+        capability = self._history_capability.snapshot()
+        if capability.generation != state.capability_generation:
+            self._fail_history_v2_entry(
+                request_id,
+                entry,
+                "History V2 capability generation changed",
+                history_v2.CancelReason.SHUTDOWN,
+            )
+            return
+
+        try:
+            result = state.handle_frame(msg_type, payload)
+        except (RuntimeError, ValueError, struct.error, OverflowError) as exc:
+            self._fail_history_v2_entry(
+                request_id,
+                entry,
+                f"Invalid History V2 stream: {exc}",
+                history_v2.CancelReason.BACKPRESSURE,
+            )
+            return
+
+        if result.window_grant_bytes:
+            update = history_v2.HistoryWindowUpdate(
+                request_id=request_id,
+                grant_bytes=result.window_grant_bytes,
+                received_through_seq=result.received_through_seq,
+            )
+            if not self._send_history_v2_control(
+                entry,
+                proto.MsgType.HISTORY_WINDOW_UPDATE,
+                update.encode(),
+            ):
+                self._fail_history_v2_entry(
+                    request_id,
+                    entry,
+                    "Connection lost while replenishing History V2 window",
+                    history_v2.CancelReason.SHUTDOWN,
+                )
+                return
+
+        if not result.terminal:
+            return
+        with self._pending_lock:
+            if self._pending_queries.get(request_id) is not entry:
+                return
+            if result.error:
+                entry['error'] = result.error
+            else:
+                entry['klines'] = state.take_rows()
+            entry['event'].set()
+
+    def _send_history_v2_control(
+        self, entry: dict, msg_type: int, payload: bytes
+    ) -> bool:
+        conn = self._conn
+        if (
+            conn is None
+            or not conn.connected
+            or conn.generation != entry['connection_generation']
+        ):
+            return False
+        return conn.send(proto.build_message(msg_type, 0, payload))
+
+    def _fail_history_v2_entry(
+        self,
+        request_id: int,
+        entry: dict,
+        message: str,
+        cancel_reason: history_v2.CancelReason,
+    ):
+        state: HistoryV2RequestState = entry['v2_state']
+        cancel = state.cancel(cancel_reason)
+        if cancel is not None:
+            self._send_history_v2_control(
+                entry, proto.MsgType.HISTORY_CANCEL, cancel.encode()
+            )
+        with self._pending_lock:
+            if self._pending_queries.get(request_id) is not entry:
+                return
+            if not entry['event'].is_set():
+                entry['error'] = message
+                entry['event'].set()
+
+    def _abort_pending_queries(
+        self,
+        message: str,
+        *,
+        cancel_reason: history_v2.CancelReason,
+        send_cancel: bool,
+    ):
+        with self._pending_lock:
+            pending = list(self._pending_queries.values())
+            self._pending_queries.clear()
+        for entry in pending:
+            if entry.get('history_version') == 2:
+                cancel = entry['v2_state'].cancel(cancel_reason)
+                if cancel is not None and send_cancel:
+                    self._send_history_v2_control(
+                        entry,
+                        proto.MsgType.HISTORY_CANCEL,
+                        cancel.encode(),
+                    )
+            entry['error'] = message
+            entry['event'].set()
+
     def _perform_history_query(self, symbol: str, period: str,
                                start_ms: int, end_ms: int,
                                max_count: int, timeout: float,
@@ -435,38 +703,116 @@ class RtdataClient:
         if not self._authenticated:
             raise ConnectionError("Not connected")
 
+        conn = self._conn
+        if conn is None or not conn.connected:
+            raise ConnectionError("Not connected")
+
         symbol_id = self._symbol_map.code_to_id(symbol) or 0
         request_id = self._alloc_request_id()
+        history_v2_options, capability_generation = (
+            self._select_history_v2_request()
+        )
+        use_history_v2 = history_v2_options is not None
+        effective_max_count = (
+            HISTORY_V2_PAGE_ROWS
+            if use_history_v2 and max_count == HISTORY_V1_PAGE_ROWS
+            else max_count
+        )
         entry = {
             'event': threading.Event(),
             'klines': [],
             'batches_received': set(),
             'batch_count': None,
             'error': None,
+            'history_version': 2 if use_history_v2 else 1,
+            'connection_generation': conn.generation,
         }
+        if use_history_v2:
+            self._ensure_history_v2_worker()
+            entry['v2_state'] = HistoryV2RequestState(
+                request_id=request_id,
+                options=history_v2_options,
+                capability_generation=capability_generation,
+                expected_symbol_id=symbol_id,
+                expected_period=proto.PERIOD_MAP.get(period, 1),
+            )
         with self._pending_lock:
             self._pending_queries[request_id] = entry
 
         logger.debug(
-            f"Sending history request: symbol={symbol} period={period} request_id={request_id} "
-            f"start={start_ms} end={end_ms} count={max_count} adjust={adjust}"
+            "Sending history request: symbol=%s period=%s request_id=%s "
+            "start=%s end=%s count=%s adjust=%s version=%s",
+            symbol,
+            period,
+            request_id,
+            start_ms,
+            end_ms,
+            effective_max_count,
+            adjust,
+            2 if use_history_v2 else 1,
         )
         msg = proto.encode_history_request(
-            request_id, symbol_id, period, start_ms, end_ms, max_count, symbol, adjust=adjust)
-        self._conn.send(msg)
-
-        if not entry['event'].wait(timeout=timeout):
+            request_id,
+            symbol_id,
+            period,
+            start_ms,
+            end_ms,
+            effective_max_count,
+            symbol,
+            adjust=adjust,
+            history_v2_options=(
+                history_v2_options.encode() if use_history_v2 else b''
+            ),
+        )
+        if (
+            conn.generation != entry['connection_generation']
+            or not conn.send(msg)
+        ):
             with self._pending_lock:
                 self._pending_queries.pop(request_id, None)
-            raise QueryTimeoutError(f"History query timeout for {symbol}")
+            if use_history_v2:
+                entry['v2_state'].cancel(history_v2.CancelReason.SHUTDOWN)
+            raise DisconnectedError(
+                f"Connection lost while sending history query for {symbol}"
+            )
+
+        if not entry['event'].wait(timeout=timeout):
+            timed_out = not entry['event'].is_set()
+            if timed_out and use_history_v2:
+                cancel = entry['v2_state'].cancel(
+                    history_v2.CancelReason.TIMEOUT
+                )
+                if cancel is None:
+                    timed_out = not entry['event'].wait(timeout=0.1)
+                elif cancel is not None:
+                    self._send_history_v2_control(
+                        entry,
+                        proto.MsgType.HISTORY_CANCEL,
+                        cancel.encode(),
+                    )
+            elif timed_out:
+                timed_out = not entry['event'].wait(timeout=0.01)
+            if timed_out:
+                with self._pending_lock:
+                    self._pending_queries.pop(request_id, None)
+                raise QueryTimeoutError(f"History query timeout for {symbol}")
 
         with self._pending_lock:
             self._pending_queries.pop(request_id, None)
 
         if entry['error']:
-            if "disconnected" in entry['error'] or "server closed" in entry['error']:
+            if any(value in entry['error'].lower() for value in (
+                "disconnected", "server closed", "upstream_lost",
+                "connection lost",
+            )):
                 raise DisconnectedError(entry['error'])
             raise QueryError(entry['error'])
+
+        if len(entry['klines']) > effective_max_count:
+            raise QueryError(
+                f"History query returned {len(entry['klines'])} rows beyond "
+                f"the requested limit {effective_max_count}"
+            )
 
         return [Kline(*k, symbol=symbol) for k in entry['klines']]
 
@@ -536,11 +882,6 @@ class RtdataClient:
             )
             if not fetched:
                 return
-            if len(fetched) > HISTORY_V1_PAGE_ROWS:
-                raise QueryError(
-                    f"History query returned {len(fetched)} rows beyond the "
-                    f"requested page size {HISTORY_V1_PAGE_ROWS}"
-                )
 
             timestamps = [int(kline.timestamp) for kline in fetched]
             if timestamps[0] < cursor or timestamps[-1] >= end_exclusive_ms:
@@ -720,6 +1061,15 @@ class RtdataClient:
             pass
         elif msg_type == proto.MsgType.TOKEN_STATUS:
             self._handle_token_status(payload)
+        elif msg_type in (
+            proto.MsgType.HISTORY_BEGIN,
+            proto.MsgType.HISTORY_DATA,
+            proto.MsgType.HISTORY_END,
+            proto.MsgType.HISTORY_ERROR,
+        ):
+            self._enqueue_history_v2_frame(
+                msg_type, payload, connection_generation
+            )
         elif msg_type == proto.MsgType.HISTORY_RESPONSE:
             logger.info(f"Received HISTORY_RESPONSE, payload_len={len(payload)}")
             self._handle_history_response(payload)
@@ -765,7 +1115,7 @@ class RtdataClient:
             proto.build_message(proto.MsgType.CAPABILITY_OFFER, 0, payload)
         )
         if self._history_capability.begin_offer(message_builder):
-            logger.info("History capability OFFER sent; D1 data path remains V1")
+            logger.info("History capability OFFER sent")
         else:
             logger.warning("History capability OFFER send failed; using V1")
 
@@ -777,9 +1127,10 @@ class RtdataClient:
         snapshot = self._history_capability.snapshot()
         if snapshot.negotiated:
             logger.info(
-                "History capability ACK accepted: v2_eligible=%s; "
-                "D1 data path remains V1",
+                "History capability ACK accepted: v2_eligible=%s "
+                "default_enabled=%s",
                 snapshot.v2_eligible,
+                self._history_capability.default_enabled,
             )
         else:
             logger.warning(
@@ -900,6 +1251,19 @@ class RtdataClient:
                 logger.error(f"Quote callback error: {e}")
 
     def _handle_history_response(self, payload: bytes):
+        if len(payload) >= 4:
+            request_id = struct.unpack_from('!I', payload)[0]
+            with self._pending_lock:
+                entry = self._pending_queries.get(request_id)
+            if entry is not None and entry.get('history_version') == 2:
+                self._fail_history_v2_entry(
+                    request_id,
+                    entry,
+                    "History V2 request received an incompatible V1 response",
+                    history_v2.CancelReason.SHUTDOWN,
+                )
+                return
+
         header_info, klines = proto.decode_history_response(payload)
         if header_info is None:
             return
@@ -965,13 +1329,11 @@ class RtdataClient:
         if "closed by server" in disconnect_reason:
             disconnect_reason = "server closed connection (possible slow-consumer protection)"
 
-        with self._pending_lock:
-            pending = list(self._pending_queries.values())
-            self._pending_queries.clear()
-
-        for entry in pending:
-            entry['error'] = disconnect_reason
-            entry['event'].set()
+        self._abort_pending_queries(
+            disconnect_reason,
+            cancel_reason=history_v2.CancelReason.CLIENT_DISCONNECT,
+            send_cancel=False,
+        )
 
         logger.warning(f"Disconnected: {disconnect_reason}")
         for cb in self._disconnect_callbacks:

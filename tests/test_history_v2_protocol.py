@@ -1,6 +1,7 @@
 import unittest
 from dataclasses import replace
 
+from rtdata import _protocol as wire
 from rtdata import _history_v2_protocol as v2
 
 
@@ -39,6 +40,38 @@ COLUMNS_HEADER_GOLDEN = bytes.fromhex(
 
 
 class HistoryV2ProtocolTest(unittest.TestCase):
+    def test_history_request_keeps_v1_bytes_and_appends_v2_options(self):
+        v1 = wire.encode_history_request(
+            0x01020304,
+            0x11223344,
+            "1m",
+            1700000000000,
+            1700000120000,
+            5000,
+            "TEST.US",
+        )
+        expected_payload = bytes.fromhex(
+            "01 02 03 04 11 22 33 44 01 "
+            "00 00 01 8b cf e5 68 00 "
+            "00 00 01 8b cf e7 3c c0 "
+            "00 00 13 88 00 07 54 45 53 54 2e 55 53 00"
+        )
+        self.assertEqual(v1[wire.HEADER_SIZE :], expected_payload)
+
+        v2_request = wire.encode_history_request(
+            0x01020304,
+            0x11223344,
+            "1m",
+            1700000000000,
+            1700000120000,
+            5000,
+            "TEST.US",
+            history_v2_options=REQUEST_GOLDEN,
+        )
+        self.assertEqual(
+            v2_request[wire.HEADER_SIZE :], expected_payload + REQUEST_GOLDEN
+        )
+
     def test_request_options_golden_and_bounds(self):
         options = v2.RequestOptions()
         self.assertEqual(options.encode(), REQUEST_GOLDEN)
@@ -93,6 +126,11 @@ class HistoryV2ProtocolTest(unittest.TestCase):
         )
         self.assertEqual(finish.encode(), END_GOLDEN)
         self.assertEqual(v2.HistoryEnd.decode(END_GOLDEN), finish)
+
+        malformed_end = bytearray(END_GOLDEN)
+        malformed_end[-1] = 1
+        with self.assertRaisesRegex(ValueError, "reserved fields"):
+            v2.HistoryEnd.decode(bytes(malformed_end))
 
     def test_control_envelope_golden(self):
         failure = v2.HistoryError(
