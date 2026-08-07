@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import patch
 
 from rtdata import API, RtdataClient
+from rtdata import _protocol as proto
 from rtdata._connection import Connection
 
 
@@ -75,6 +76,40 @@ class DisconnectingEvent:
 
 
 class ReconnectStateMachineTest(unittest.TestCase):
+    def test_receive_loop_runs_when_auto_reconnect_is_disabled(self):
+        connection_socket, peer_socket = socket.socketpair()
+        received = []
+        received_event = threading.Event()
+
+        def on_message(msg_type, symbol_id, payload):
+            received.append((msg_type, symbol_id, payload))
+            received_event.set()
+
+        connection = Connection(
+            "127.0.0.1",
+            0,
+            on_message,
+            lambda _reason: None,
+            heartbeat_interval=60,
+            auto_reconnect=False,
+        )
+        connection._sock = connection_socket
+        connection._connected = True
+        try:
+            connection.start_recv_loop()
+            peer_socket.sendall(
+                proto.build_message(proto.MsgType.HEARTBEAT, 7, b"test")
+            )
+
+            self.assertTrue(received_event.wait(timeout=1))
+            self.assertEqual(
+                received,
+                [(proto.MsgType.HEARTBEAT, 7, b"test")],
+            )
+        finally:
+            connection.close()
+            peer_socket.close()
+
     def test_second_disconnect_stays_in_reconnect_loop(self):
         server = ReconnectServer()
         server.start()

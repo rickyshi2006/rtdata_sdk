@@ -135,7 +135,7 @@ class Connection:
 
     def _recv_loop(self, sock: socket.socket):
         buf = bytearray()
-        while not self._stop_event.is_set() and self._auto_reconnect:
+        while not self._stop_event.is_set():
             try:
                 if self._sock is not sock:
                     break
@@ -187,7 +187,7 @@ class Connection:
     # ========================================================================
 
     def _heartbeat_loop(self):
-        while not self._stop_event.is_set() and self._auto_reconnect:
+        while not self._stop_event.is_set():
             if self._stop_event.wait(timeout=self._heartbeat_interval):
                 break  # stop_event set
             if self._connected:
