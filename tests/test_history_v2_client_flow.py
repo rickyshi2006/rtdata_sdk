@@ -1,3 +1,4 @@
+import queue
 import struct
 import threading
 import unittest
@@ -8,7 +9,11 @@ from rtdata import _history_capability_runtime as capability_runtime
 from rtdata import _history_v2_codec as codec
 from rtdata import _history_v2_protocol as protocol
 from rtdata import _protocol as wire
-from rtdata.client import HISTORY_V2_PAGE_ROWS, RtdataClient
+from rtdata.client import (
+    HISTORY_V2_PAGE_ROWS,
+    RtdataClient,
+    _HistoryV2DecodeQueue,
+)
 from rtdata.exceptions import QueryTimeoutError
 
 
@@ -175,6 +180,69 @@ class HistoryV2ClientFlowTest(unittest.TestCase):
         client, _ = self.make_client(default_enabled=False)
         options, _ = client._select_history_v2_request()
         self.assertIsNone(options)
+        client.close()
+
+    def test_decode_queue_accepts_many_small_frames_within_byte_budget(self):
+        work_queue = _HistoryV2DecodeQueue(1024 * 1024)
+        payloads = []
+        for chunk_seq in range(120):
+            compressed = bytes([chunk_seq % 251 + 1]) * (8 * 1024)
+            header = protocol.HistoryDataHeader(
+                request_id=77,
+                chunk_seq=chunk_seq,
+                row_count=1,
+                uncompressed_size=len(compressed),
+                compressed_size=len(compressed),
+                first_timestamp_ms=1700000000000 + chunk_seq * 60000,
+                last_timestamp_ms=1700000000000 + chunk_seq * 60000,
+            )
+            payload = header.encode() + compressed
+            payloads.append(payload)
+            work_queue.put_nowait((protocol.MSG_HISTORY_DATA, payload, 1))
+
+        received = [work_queue.get(timeout=0)[1] for _ in payloads]
+        self.assertEqual(received, payloads)
+
+    def test_decode_queue_backpressure_uses_queued_payload_bytes(self):
+        work_queue = _HistoryV2DecodeQueue(16)
+        work_queue.put_nowait((protocol.MSG_HISTORY_BEGIN, b"12345678", 1))
+        work_queue.put_nowait((protocol.MSG_HISTORY_BEGIN, b"abcdefgh", 1))
+        with self.assertRaises(queue.Full):
+            work_queue.put_nowait((protocol.MSG_HISTORY_BEGIN, b"x", 1))
+        self.assertEqual(work_queue.get(timeout=0)[1], b"12345678")
+        work_queue.put_nowait((protocol.MSG_HISTORY_BEGIN, b"x", 1))
+
+    def test_decode_queue_overflow_fails_only_the_request(self):
+        client, _ = self.make_client(respond=False)
+        request_id = 77
+        entry = {
+            "history_version": 2,
+            "connection_generation": 1,
+        }
+        with client._pending_lock:
+            client._pending_queries[request_id] = entry
+        client._history_v2_queue = _HistoryV2DecodeQueue(4)
+        client._history_v2_queue.put_nowait(
+            (protocol.MSG_HISTORY_BEGIN, b"full", 1)
+        )
+
+        with mock.patch.object(
+            client, "_ensure_history_v2_worker"
+        ), mock.patch.object(client, "_fail_history_v2_entry") as fail:
+            client._enqueue_history_v2_frame(
+                protocol.MSG_HISTORY_BEGIN,
+                struct.pack("!I", request_id) + b"x",
+                1,
+            )
+
+        fail.assert_called_once_with(
+            request_id,
+            entry,
+            "History V2 decode queue is full",
+            protocol.CancelReason.BACKPRESSURE,
+        )
+        with client._pending_lock:
+            client._pending_queries.pop(request_id, None)
         client.close()
 
 

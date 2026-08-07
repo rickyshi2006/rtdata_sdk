@@ -18,6 +18,7 @@ import time
 import logging
 import queue
 import struct
+from collections import deque
 from datetime import datetime, date, time as dt_time
 from typing import Callable, Optional, List, Dict, Iterator, Tuple, Union
 
@@ -39,8 +40,43 @@ VALID_ADJUSTS = {'none', 'forward', 'backward'}
 TERMINAL_TOKEN_STATUSES = {'expired', 'disabled', 'revoked'}
 HISTORY_V1_PAGE_ROWS = 5000
 HISTORY_V2_PAGE_ROWS = 1_000_000
-HISTORY_V2_DECODE_QUEUE_SIZE = 32
+HISTORY_V2_DECODE_MAX_BYTES = 4 * 1024 * 1024
 HISTORY_V2_MAX_RELAY_WINDOW_BYTES = 2 * 1024 * 1024
+
+
+class _HistoryV2DecodeQueue:
+    """Non-blocking FIFO bounded by queued wire-payload bytes, not frame count."""
+
+    def __init__(self, max_bytes: int):
+        if max_bytes <= 0:
+            raise ValueError("max_bytes must be positive")
+        self._max_bytes = max_bytes
+        self._queued_bytes = 0
+        self._items = deque()
+        self._condition = threading.Condition()
+
+    def put_nowait(self, item):
+        payload_bytes = 0 if item is None else len(item[1])
+        if payload_bytes > self._max_bytes:
+            raise queue.Full
+        with self._condition:
+            if self._queued_bytes + payload_bytes > self._max_bytes:
+                raise queue.Full
+            self._items.append((item, payload_bytes))
+            self._queued_bytes += payload_bytes
+            self._condition.notify()
+
+    def get(self, timeout=None):
+        with self._condition:
+            deadline = None if timeout is None else time.monotonic() + timeout
+            while not self._items:
+                remaining = None if deadline is None else deadline - time.monotonic()
+                if remaining is not None and remaining <= 0:
+                    raise queue.Empty
+                self._condition.wait(remaining)
+            item, payload_bytes = self._items.popleft()
+            self._queued_bytes -= payload_bytes
+            return item
 
 
 class RtdataClient:
@@ -122,8 +158,8 @@ class RtdataClient:
         self._pending_queries: Dict[int, dict] = {}
         self._pending_lock = threading.Lock()
         self._history_v2_worker_lock = threading.Lock()
-        self._history_v2_queue: "queue.Queue" = queue.Queue(
-            maxsize=HISTORY_V2_DECODE_QUEUE_SIZE
+        self._history_v2_queue = _HistoryV2DecodeQueue(
+            HISTORY_V2_DECODE_MAX_BYTES
         )
         self._history_v2_worker_stop = threading.Event()
         self._history_v2_worker: Optional[threading.Thread] = None
@@ -489,8 +525,8 @@ class RtdataClient:
                 and self._history_v2_worker.is_alive()
             ):
                 return
-            self._history_v2_queue = queue.Queue(
-                maxsize=HISTORY_V2_DECODE_QUEUE_SIZE
+            self._history_v2_queue = _HistoryV2DecodeQueue(
+                HISTORY_V2_DECODE_MAX_BYTES
             )
             self._history_v2_worker_stop = threading.Event()
             work_queue = self._history_v2_queue
@@ -509,10 +545,6 @@ class RtdataClient:
             if worker is None:
                 return
             self._history_v2_worker_stop.set()
-            try:
-                self._history_v2_queue.put_nowait(None)
-            except queue.Full:
-                pass
         if worker.is_alive() and worker is not threading.current_thread():
             worker.join(timeout=3)
         with self._history_v2_worker_lock:
