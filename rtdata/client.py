@@ -18,7 +18,7 @@ import time
 import logging
 import queue
 from datetime import datetime, date, time as dt_time
-from typing import Callable, Optional, List, Dict, Union
+from typing import Callable, Optional, List, Dict, Iterator, Tuple, Union
 
 from . import _protocol as proto
 from ._connection import Connection
@@ -33,6 +33,7 @@ from .exceptions import (
 logger = logging.getLogger(__name__)
 VALID_ADJUSTS = {'none', 'forward', 'backward'}
 TERMINAL_TOKEN_STATUSES = {'expired', 'disabled', 'revoked'}
+HISTORY_V1_PAGE_ROWS = 5000
 
 
 class RtdataClient:
@@ -457,34 +458,81 @@ class RtdataClient:
                 "History cache miss: symbol=%s period=%s adjust=%s missing_ranges=%s",
                 symbol, period, adjust, missing_ranges,
             )
+        deadline = time.monotonic() + timeout
         for missing_start, missing_end_exclusive in missing_ranges:
-            fetch_end_ms = max(missing_start, missing_end_exclusive - 1)
-            fetched = self._perform_history_query(
-                symbol, period, missing_start, fetch_end_ms, 5000, timeout, adjust=adjust)
-            self._history_cache.store_range(
-                symbol,
-                period,
-                adjust,
-                missing_start,
-                missing_end_exclusive,
-                [
-                    (
-                        k.timestamp,
-                        k.open,
-                        k.high,
-                        k.low,
-                        k.close,
-                        k.volume,
-                        k.turnover,
-                        k.open_interest,
-                    )
-                    for k in fetched
-                ],
-            )
+            for coverage_start, coverage_end, fetched in self._iter_history_range_pages(
+                    symbol, period, adjust, missing_start,
+                    missing_end_exclusive, deadline):
+                self._history_cache.store_range(
+                    symbol,
+                    period,
+                    adjust,
+                    coverage_start,
+                    coverage_end,
+                    [
+                        (
+                            k.timestamp,
+                            k.open,
+                            k.high,
+                            k.low,
+                            k.close,
+                            k.volume,
+                            k.turnover,
+                            k.open_interest,
+                        )
+                        for k in fetched
+                    ],
+                )
 
         cached_rows = self._history_cache.load_range(
             symbol, period, adjust, start_ms, end_exclusive_ms - 1)
         return [Kline(*row, symbol=symbol) for row in cached_rows]
+
+    def _iter_history_range_pages(
+        self,
+        symbol: str,
+        period: str,
+        adjust: str,
+        start_ms: int,
+        end_exclusive_ms: int,
+        deadline: float,
+    ) -> Iterator[Tuple[int, int, List[Kline]]]:
+        cursor = start_ms
+        while cursor < end_exclusive_ms:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise QueryTimeoutError(f"History query timeout for {symbol}")
+
+            fetched = self._perform_history_query(
+                symbol,
+                period,
+                cursor,
+                end_exclusive_ms - 1,
+                HISTORY_V1_PAGE_ROWS,
+                remaining,
+                adjust=adjust,
+            )
+            if not fetched:
+                return
+            if len(fetched) > HISTORY_V1_PAGE_ROWS:
+                raise QueryError(
+                    f"History query returned {len(fetched)} rows beyond the "
+                    f"requested page size {HISTORY_V1_PAGE_ROWS}"
+                )
+
+            timestamps = [int(kline.timestamp) for kline in fetched]
+            if timestamps[0] < cursor or timestamps[-1] >= end_exclusive_ms:
+                raise QueryError("History query returned rows outside the requested range")
+            if any(current <= previous
+                   for previous, current in zip(timestamps, timestamps[1:])):
+                raise QueryError("History query returned non-increasing timestamps")
+
+            next_cursor = timestamps[-1] + 1
+            if next_cursor <= cursor:
+                raise QueryError("History query pagination made no forward progress")
+
+            yield cursor, min(next_cursor, end_exclusive_ms), fetched
+            cursor = next_cursor
 
     def get_kline(self, symbol: str, period: str = '1d',
                   start: Union[int, float, str, datetime, date] = 0,
@@ -512,8 +560,17 @@ class RtdataClient:
             return self._get_history_with_local_cache(
                 symbol, period, adjust, start_ms, end_ms + 1, timeout)
 
+        if start_ms and end_ms:
+            klines: List[Kline] = []
+            deadline = time.monotonic() + timeout
+            for _coverage_start, _coverage_end, fetched in self._iter_history_range_pages(
+                    symbol, period, adjust, start_ms, end_ms + 1, deadline):
+                klines.extend(fetched)
+            return klines
+
         return self._perform_history_query(
-            symbol, period, start_ms, end_ms, 5000, timeout, adjust=adjust)
+            symbol, period, start_ms, end_ms,
+            HISTORY_V1_PAGE_ROWS, timeout, adjust=adjust)
 
     def get_kline_range(self, symbol: str, period: str = '1d',
                         start: Union[int, float, str, datetime, date] = 0,
