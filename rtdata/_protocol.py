@@ -48,6 +48,12 @@ class MsgType:
     SYMBOL_LIST_RESPONSE = 0x13
     CAPABILITY_OFFER    = 0x19
     CAPABILITY_ACK      = 0x1A
+    HISTORY_BEGIN       = 0x28
+    HISTORY_DATA        = 0x29
+    HISTORY_END         = 0x2A
+    HISTORY_ERROR       = 0x2B
+    HISTORY_CANCEL      = 0x2C
+    HISTORY_WINDOW_UPDATE = 0x2D
 
     FINANCE_REQUEST         = 0x20
     FINANCE_RESPONSE        = 0x21
