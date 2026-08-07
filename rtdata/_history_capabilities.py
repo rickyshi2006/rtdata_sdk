@@ -141,6 +141,23 @@ def v1_capabilities(role: CapabilityRole) -> HistoryCapabilities:
     return HistoryCapabilities(role=role)
 
 
+def v2_capabilities(
+    role: CapabilityRole,
+    max_block_bytes: int = 256 * 1024,
+) -> HistoryCapabilities:
+    result = HistoryCapabilities(
+        role=role,
+        history_protocol_mask=PROTOCOL_KNOWN_MASK,
+        codec_mask=CODEC_KNOWN_MASK,
+        compression_mask=COMPRESSION_KNOWN_MASK,
+        feature_mask=FEATURE_KNOWN_MASK,
+        max_block_bytes=max_block_bytes,
+        column_schema_mask=COLUMN_SCHEMA_KNOWN_MASK,
+    )
+    result.validate()
+    return result
+
+
 def intersect_capabilities(
     left: HistoryCapabilities,
     right: HistoryCapabilities,

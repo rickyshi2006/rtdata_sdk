@@ -22,6 +22,7 @@ from typing import Callable, Optional, List, Dict, Iterator, Tuple, Union
 
 from . import _protocol as proto
 from ._connection import Connection
+from ._history_capability_runtime import HistoryCapabilityRuntime
 from ._history_segment_cache import HistorySegmentCache
 from ._symbol_map import SymbolMap
 from .models import Quote, Kline, FinanceData, TokenStatus
@@ -52,6 +53,10 @@ class RtdataClient:
         history_cache_enabled: bool = True,
         async_callbacks: bool = True,
         callback_queue_size: int = 1000,
+        history_v2_advertise: bool = False,
+        history_v2_default: bool = False,
+        history_v2_max_block_bytes: int = 256 * 1024,
+        history_capability_ack_timeout: float = 1.0,
     ):
         self._token = token
         self._host = host
@@ -60,10 +65,17 @@ class RtdataClient:
         self._current_node_id = ""
         self._gateway_version = ""
         self._protocol_features: List[str] = []
+        self._protocol_features_supported: List[str] = []
         self._heartbeat_interval = heartbeat_interval
         self._auto_reconnect = auto_reconnect
         self._async_callbacks = async_callbacks
         self._callback_queue_size = callback_queue_size
+        self._history_capability = HistoryCapabilityRuntime(
+            advertise=history_v2_advertise,
+            default_enabled=history_v2_default,
+            max_block_bytes=history_v2_max_block_bytes,
+            ack_timeout=history_capability_ack_timeout,
+        )
 
         self._symbol_map = SymbolMap(cache_dir=symbol_cache_dir)
         history_cache_base_dir = history_cache_dir if history_cache_dir is not None else symbol_cache_dir
@@ -161,6 +173,7 @@ class RtdataClient:
         if self._conn is not None:
             self._conn.close()
             self._conn = None
+        self._history_capability.reset("new_connection")
         self._symbol_map.load_cache()
 
         if self._api_url:
@@ -231,11 +244,19 @@ class RtdataClient:
         self._current_node_id = info.get('node_id', "") or ""
         self._gateway_version = info.get('gateway_version', "") or ""
         protocol_info = info.get('protocol', {})
+        self._protocol_features = []
+        self._protocol_features_supported = []
         if isinstance(protocol_info, dict):
             features = protocol_info.get('features_enabled', [])
             self._protocol_features = (
                 [str(value) for value in features]
                 if isinstance(features, list)
+                else []
+            )
+            supported = protocol_info.get('features_supported', [])
+            self._protocol_features_supported = (
+                [str(value) for value in supported]
+                if isinstance(supported, list)
                 else []
             )
         remote_version = info.get('symbol_map_version', 0)
@@ -262,6 +283,7 @@ class RtdataClient:
 
     def close(self):
         self._authenticated = False
+        self._history_capability.reset("closed")
         self._callback_stop.set()
         if self._callback_thread and self._callback_thread.is_alive():
             self._callback_thread.join(timeout=3)
@@ -655,7 +677,28 @@ class RtdataClient:
         with self._symbol_map._lock:
             return dict(self._symbol_map._id_to_code)
 
-    def _dispatch_message(self, msg_type: int, symbol_id: int, payload: bytes):
+    def _dispatch_message(
+        self,
+        msg_type: int,
+        symbol_id: int,
+        payload: bytes,
+        connection_generation: Optional[int] = None,
+        source_connection: Optional[Connection] = None,
+    ):
+        if (
+            source_connection is not None
+            and self._conn is not source_connection
+        ):
+            logger.debug("Ignoring message from replaced connection")
+            return
+        current_connection = source_connection or self._conn
+        if (
+            connection_generation is not None
+            and current_connection is not None
+            and connection_generation != current_connection.generation
+        ):
+            logger.debug("Ignoring message from stale connection generation")
+            return
         logger.debug(f"_dispatch_message: msg_type=0x{msg_type:04x} symbol_id={symbol_id} payload_len={len(payload)}")
         with self._stats_lock:
             self._messages_received += 1
@@ -663,6 +706,8 @@ class RtdataClient:
 
         if msg_type == proto.MsgType.AUTH_RESPONSE:
             self._handle_auth_response(payload)
+        elif msg_type == proto.MsgType.CAPABILITY_ACK:
+            self._handle_history_capability_ack(payload)
         elif msg_type == proto.MsgType.SYMBOL_MAP:
             self._handle_symbol_map(payload)
         elif msg_type in (proto.MsgType.SNAPSHOT_FULL, proto.MsgType.SNAPSHOT_DELTA):
@@ -694,10 +739,53 @@ class RtdataClient:
         self._auth_event.set()
         if success:
             logger.info("Authenticated")
+            self._begin_history_capability_negotiation()
         else:
             if self._is_terminal_auth_error(error_msg) and self._conn:
                 self._conn.suspend_auto_reconnect()
             logger.error(f"Auth failed: {error_msg}")
+
+    def _begin_history_capability_negotiation(self):
+        if not self._history_capability.advertise:
+            return
+        if (
+            self._api_url
+            and "history_capability_v1" not in self._protocol_features_supported
+        ):
+            self._history_capability.mark_peer_unsupported()
+            logger.info("History capability discovery unavailable; using V1")
+            return
+
+        conn = self._conn
+        if conn is None:
+            self._history_capability.reset("connection_unavailable")
+            return
+
+        message_builder = lambda payload: conn.send(
+            proto.build_message(proto.MsgType.CAPABILITY_OFFER, 0, payload)
+        )
+        if self._history_capability.begin_offer(message_builder):
+            logger.info("History capability OFFER sent; D1 data path remains V1")
+        else:
+            logger.warning("History capability OFFER send failed; using V1")
+
+    def _handle_history_capability_ack(self, payload: bytes):
+        consumed = self._history_capability.handle_ack(payload)
+        if not consumed:
+            logger.debug("Ignoring unexpected or late history capability ACK")
+            return
+        snapshot = self._history_capability.snapshot()
+        if snapshot.negotiated:
+            logger.info(
+                "History capability ACK accepted: v2_eligible=%s; "
+                "D1 data path remains V1",
+                snapshot.v2_eligible,
+            )
+        else:
+            logger.warning(
+                "Invalid history capability ACK; using V1: %s",
+                snapshot.fallback_reason,
+            )
 
     @staticmethod
     def _is_terminal_auth_error(error_msg: str) -> bool:
@@ -865,6 +953,7 @@ class RtdataClient:
 
     def _handle_disconnected(self, reason: str):
         self._authenticated = False
+        self._history_capability.reset(reason or "disconnected")
 
         if not self._auth_event.is_set():
             self._auth_success = False
@@ -1000,6 +1089,26 @@ class RtdataClient:
     @property
     def protocol_features(self) -> List[str]:
         return list(self._protocol_features)
+
+    @property
+    def protocol_features_supported(self) -> List[str]:
+        return list(self._protocol_features_supported)
+
+    @property
+    def history_capabilities(self):
+        return self._history_capability.snapshot().capabilities
+
+    @property
+    def history_v2_eligible(self) -> bool:
+        return self._history_capability.snapshot().v2_eligible
+
+    @property
+    def history_capability_state(self) -> str:
+        return self._history_capability.snapshot().state
+
+    @property
+    def history_capability_fallback_reason(self) -> str:
+        return self._history_capability.snapshot().fallback_reason
 
     @property
     def token_status(self) -> Optional[TokenStatus]:

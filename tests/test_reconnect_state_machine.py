@@ -81,7 +81,9 @@ class ReconnectStateMachineTest(unittest.TestCase):
         received = []
         received_event = threading.Event()
 
-        def on_message(msg_type, symbol_id, payload):
+        def on_message(
+            msg_type, symbol_id, payload, _generation, _connection
+        ):
             received.append((msg_type, symbol_id, payload))
             received_event.set()
 

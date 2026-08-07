@@ -40,6 +40,7 @@ class Connection:
         self._heartbeat_thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
         self._connected = False
+        self._generation = 0
 
         # 重连回调（由 Client 设置）
         self._on_reconnected: Optional[Callable] = None
@@ -56,6 +57,10 @@ class Connection:
     @property
     def reconnecting(self) -> bool:
         return self._reconnecting
+
+    @property
+    def generation(self) -> int:
+        return self._generation
 
     def suspend_auto_reconnect(self):
         """停止当前自动重连；显式 connect() 仍可创建新连接。"""
@@ -76,6 +81,7 @@ class Connection:
             sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             sock.settimeout(None)  # 接收线程用阻塞模式
             self._sock = sock
+            self._generation += 1
             self._connected = True
             logger.info("Connected to gateway")
         except Exception as e:
@@ -87,7 +93,7 @@ class Connection:
         if sock is None:
             raise ConnectionError("Cannot start receive loop without a socket")
         self._recv_thread = threading.Thread(
-            target=self._recv_loop, args=(sock,),
+            target=self._recv_loop, args=(sock, self._generation),
             name='rtdata-recv', daemon=True)
         self._recv_thread.start()
 
@@ -133,11 +139,11 @@ class Connection:
     # 接收循环
     # ========================================================================
 
-    def _recv_loop(self, sock: socket.socket):
+    def _recv_loop(self, sock: socket.socket, generation: int):
         buf = bytearray()
         while not self._stop_event.is_set():
             try:
-                if self._sock is not sock:
+                if self._sock is not sock or self._generation != generation:
                     break
                 # 设置超时以便检查 stop_event
                 sock.settimeout(1.0)
@@ -172,8 +178,12 @@ class Connection:
                     payload = bytes(buf[proto.HEADER_SIZE:total_len])
                     del buf[:total_len]
 
+                    if self._sock is not sock or self._generation != generation:
+                        return
+
                     try:
-                        self._on_message(msg_type, symbol_id, payload)
+                        self._on_message(
+                            msg_type, symbol_id, payload, generation, self)
                     except Exception as e:
                         logger.error(f"Message handler error: {e}")
 
@@ -281,7 +291,7 @@ class Connection:
                 if sock is None:
                     raise ConnectionError("Reconnect completed without a socket")
                 self._recv_thread = threading.Thread(
-                    target=self._recv_loop, args=(sock,),
+                    target=self._recv_loop, args=(sock, self._generation),
                     name='rtdata-recv', daemon=True)
                 self._recv_thread.start()
                 time.sleep(0.1)
