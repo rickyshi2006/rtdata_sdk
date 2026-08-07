@@ -120,9 +120,10 @@ DDB PID 未变化，staging 结束后 `19480-19483` 端口均已释放。
 
 ## 测试期间暴露的既有边界
 
-1. `auto_reconnect=False` 时，现有 `_connection.py` 接收循环不会运行，导致首次鉴权
-   等待超时；联合验收使用 SDK 默认值 `auto_reconnect=True`。该问题与历史分页改动
-   无关，但在依赖关闭自动重连前必须单独修复。
+1. 首次 harness 使用 `auto_reconnect=False` 时暴露出 `_connection.py` 接收循环不会
+   运行的问题，因此未发出历史请求；联合验收使用 SDK 默认值 `auto_reconnect=True`。
+   该既有问题随后由独立提交 `817f11f` 修复，并新增 socketpair 回归测试；SDK 全量
+   测试更新为 `19/19 passed`。
 2. upcloud 主循环使用不可中断的 30 秒 sleep，本次 `SIGTERM` 后恰好略超 staging
    停止脚本的 30 秒等待上限。进程随后完成正常清理，第二次停止调用仅清理 cloud；
    没有使用强杀，也没有遗留端口或 DDB 资源。该停止延迟属于既有运行边界。
