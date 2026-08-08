@@ -227,6 +227,7 @@ class RtdataClient:
             self._conn.close()
             self._conn = None
         self._history_capability.reset("new_connection")
+        self._symbol_map_event.clear()
         self._symbol_map.load_cache()
 
         if self._api_url:
@@ -271,11 +272,11 @@ class RtdataClient:
             self._conn.close()
             raise AuthenticationError(f"Authentication failed: {self._auth_error}")
 
-        if self._api_url and self._symbol_map.size > 0:
+        if self._symbol_map.size > 0:
             self._symbol_map_event.set()
-            logger.info("Symbol map already loaded via discovery API")
+            logger.info("Symbol map already available from cache or discovery API")
         elif not self._symbol_map_event.wait(timeout=timeout):
-            logger.warning("Symbol map not received, using cache if available")
+            logger.warning("Symbol map not received and no valid cache is available")
 
         if not self._conn or not self._conn.connected:
             self._authenticated = False
@@ -1400,7 +1401,10 @@ class RtdataClient:
         if not self._auth_success:
             raise RuntimeError(f"Re-auth failed: {self._auth_error}")
 
-        if not self._symbol_map_event.wait(timeout=30):
+        if self._symbol_map.size > 0:
+            self._symbol_map_event.set()
+            logger.info("Using cached symbol map while restoring connection")
+        elif not self._symbol_map_event.wait(timeout=30):
             if not self._conn or not self._conn.connected:
                 raise RuntimeError(
                     "Connection lost while waiting for symbol map after reconnect")
