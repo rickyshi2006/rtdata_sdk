@@ -311,13 +311,24 @@ class RtdataClient:
             self.current_node_id or "unknown",
         )
 
-    def _do_discovery(self, timeout: float):
+    def _do_discovery(
+        self, timeout: float, target_node_id: Optional[str] = None
+    ):
         from . import _discovery as discovery
 
-        info = discovery.discover_endpoint(self._api_url, self._token, timeout=timeout)
+        info = discovery.discover_endpoint(
+            self._api_url, self._token, timeout=timeout,
+            target_node_id=target_node_id,
+        )
+        discovered_node_id = info.get('node_id', "") or ""
+        if target_node_id and discovered_node_id != target_node_id:
+            raise DiscoveryError(
+                "targeted discovery returned node "
+                f"{discovered_node_id or '<unknown>'}, expected {target_node_id}"
+            )
         self._host = info['tcp_host']
         self._port = info['tcp_port']
-        self._current_node_id = info.get('node_id', "") or ""
+        self._current_node_id = discovered_node_id
         self._gateway_version = info.get('gateway_version', "") or ""
         protocol_info = info.get('protocol', {})
         self._protocol_features = []
@@ -1494,19 +1505,16 @@ class RtdataClient:
     def _before_reconnect(self):
         if self._api_url:
             try:
-                self._do_discovery(timeout=10.0)
+                target_node_id = (
+                    self._session_rehome_target
+                    if self._session_rehome_requested
+                    else None
+                )
+                self._do_discovery(
+                    timeout=10.0, target_node_id=target_node_id
+                )
                 self._conn._host = self._host
                 self._conn._port = self._port
-                if (
-                    self._session_rehome_requested
-                    and self._session_rehome_target
-                    and self._current_node_id != self._session_rehome_target
-                ):
-                    raise DiscoveryError(
-                        "discovery returned node "
-                        f"{self._current_node_id or '<unknown>'}, expected "
-                        f"{self._session_rehome_target}"
-                    )
                 return True
             except Exception as e:
                 if self._session_rehome_requested:
