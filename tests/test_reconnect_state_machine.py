@@ -2,9 +2,10 @@ import socket
 import threading
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from rtdata import API, RtdataClient
+from rtdata import _protocol as proto
 from rtdata._connection import Connection
 
 
@@ -75,6 +76,92 @@ class DisconnectingEvent:
 
 
 class ReconnectStateMachineTest(unittest.TestCase):
+    def test_connect_does_not_wait_for_symbol_map_when_cache_is_valid(self):
+        client = RtdataClient(
+            token="test",
+            api_url=None,
+            auto_reconnect=False,
+            async_callbacks=False,
+        )
+        connection = Mock()
+        connection.connected = True
+        connection.send.side_effect = lambda _data: (
+            client._handle_auth_response(b"\x01") or True
+        )
+
+        def load_cache():
+            client._symbol_map._id_to_code = {1: "TEST"}
+            client._symbol_map._code_to_id = {"TEST": 1}
+            return True
+
+        with patch.object(client._symbol_map, "load_cache", side_effect=load_cache), \
+                patch("rtdata.client.Connection", return_value=connection):
+            started = time.monotonic()
+            client.connect(timeout=0.5)
+            elapsed = time.monotonic() - started
+
+        self.assertLess(elapsed, 0.2)
+        self.assertTrue(client.is_connected)
+        self.assertTrue(client._symbol_map_event.is_set())
+
+    def test_connect_waits_when_cache_is_empty(self):
+        client = RtdataClient(
+            token="test",
+            api_url=None,
+            auto_reconnect=False,
+            async_callbacks=False,
+        )
+        connection = Mock()
+        connection.connected = True
+        connection.send.side_effect = lambda _data: (
+            client._handle_auth_response(b"\x01") or True
+        )
+
+        with patch.object(client._symbol_map, "load_cache", return_value=False), \
+                patch("rtdata.client.Connection", return_value=connection):
+            started = time.monotonic()
+            client.connect(timeout=0.2)
+            elapsed = time.monotonic() - started
+
+        self.assertGreaterEqual(elapsed, 0.15)
+        self.assertEqual(client._symbol_map.size, 0)
+
+    def test_receive_loop_runs_when_auto_reconnect_is_disabled(self):
+        connection_socket, peer_socket = socket.socketpair()
+        received = []
+        received_event = threading.Event()
+
+        def on_message(
+            msg_type, symbol_id, payload, _generation, _connection
+        ):
+            received.append((msg_type, symbol_id, payload))
+            received_event.set()
+
+        connection = Connection(
+            "127.0.0.1",
+            0,
+            on_message,
+            lambda _reason: None,
+            heartbeat_interval=60,
+            auto_reconnect=False,
+        )
+        connection._sock = connection_socket
+        connection._connected = True
+        try:
+            connection.start_recv_loop()
+            peer_socket.sendall(
+                proto.build_message(proto.MsgType.HEARTBEAT, 7, b"test")
+            )
+
+            self.assertTrue(received_event.wait(timeout=1))
+            self.assertEqual(
+                received,
+                [(proto.MsgType.HEARTBEAT, 7, b"test")],
+            )
+        finally:
+            connection.close()
+            peer_socket.close()
+
     def test_second_disconnect_stays_in_reconnect_loop(self):
         server = ReconnectServer()
         server.start()
@@ -118,15 +205,15 @@ class ReconnectStateMachineTest(unittest.TestCase):
         connection = FakeConnection()
         connection.on_auth = lambda: client._handle_auth_response(b"\x01")
         client._conn = connection
-        client._symbol_map._id_to_code = {1: "TEST"}
-        client._symbol_map._code_to_id = {"TEST": 1}
+        client._symbol_map._id_to_code = {}
+        client._symbol_map._code_to_id = {}
         client._symbol_map_event = DisconnectingEvent(connection)
         client._subscribed_codes = ["TEST"]
         connected = []
         client._connect_callbacks.append(lambda: connected.append(True))
 
         with self.assertRaisesRegex(
-                RuntimeError, "Connection lost while waiting for symbol map"):
+                RuntimeError, "Connection lost while waiting for symbol map after reconnect"):
             client._handle_reconnected()
 
         self.assertFalse(client.is_connected)

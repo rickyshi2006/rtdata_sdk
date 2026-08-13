@@ -84,6 +84,7 @@ with RtdataClient(
 ## 当前行为说明
 
 - 指定 `api_url` 后，SDK 会先做服务发现，再连接 discovery 返回的 TCP 节点。
+- `session_rehome_advertise=True` 可显式启用安全节点迁移；必须同时提供 `api_url` 并保持 `auto_reconnect=True`，默认关闭。
 - `API.subscribe()` / `API.get_kline()` / `API.get_finance()` 会在首次调用时自动连接；也可以先显式 `api.connect()`。
 - 实时订阅不是逐条完整回放；如果本地消费过慢，网关可能丢弃旧快照，或主动断开后由 SDK 自动重连。
 - 历史和财务查询是请求-响应语义。

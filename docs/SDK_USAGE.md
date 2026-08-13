@@ -131,6 +131,8 @@ API(
     symbol_cache_dir: str | None = None,
     history_cache_dir: str | None = None,
     history_cache_enabled: bool = True,
+    session_rehome_advertise: bool = False,
+    session_capability_ack_timeout: float = 1.0,
 )
 ```
 
@@ -150,6 +152,8 @@ RtdataClient(
     history_cache_enabled: bool = True,
     async_callbacks: bool = True,
     callback_queue_size: int = 1000,
+    session_rehome_advertise: bool = False,
+    session_capability_ack_timeout: float = 1.0,
 )
 ```
 
@@ -430,6 +434,23 @@ def on_token_status(status):
 5. 自动恢复已有订阅
 
 因此断线后你通常不需要手动再次 `subscribe()`。
+
+### 11.1 安全节点迁移（可选）
+
+需要 Cloud Gateway 主动把会话从异常节点迁移到健康节点时，可显式开启：
+
+```python
+api = API(
+    token="your_token",
+    api_url="https://api.fengv2ray.tk",
+    session_rehome_advertise=True,
+)
+```
+
+该能力默认关闭，并且只有同时配置 `api_url` 且 `auto_reconnect=True` 才会向服务端声明。收到迁移指令后，
+SDK 会终止当前在途查询、强制重新 discovery、重新认证并恢复订阅。迁移 discovery
+失败或返回的不是指定目标节点时，不会回落到旧节点地址；固定 `host:port` 客户端
+不会声明该能力，也不会被 Cloud Gateway 主动迁移。
 
 ## 12. 异常语义
 

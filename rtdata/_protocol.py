@@ -14,6 +14,7 @@ import time
 import logging
 import json
 
+from . import _history_v2_protocol as history_v2_protocol
 from .models import TokenStatus
 
 logger = logging.getLogger(__name__)
@@ -46,6 +47,16 @@ class MsgType:
     HISTORY_RESPONSE    = 0x11
     SYMBOL_LIST_REQUEST = 0x12
     SYMBOL_LIST_RESPONSE = 0x13
+    CAPABILITY_OFFER    = 0x19
+    CAPABILITY_ACK      = 0x1A
+    SESSION_CAPABILITY_OFFER = 0x1B
+    SESSION_CAPABILITY_ACK = 0x1C
+    HISTORY_BEGIN       = 0x28
+    HISTORY_DATA        = 0x29
+    HISTORY_END         = 0x2A
+    HISTORY_ERROR       = 0x2B
+    HISTORY_CANCEL      = 0x2C
+    HISTORY_WINDOW_UPDATE = 0x2D
 
     FINANCE_REQUEST         = 0x20
     FINANCE_RESPONSE        = 0x21
@@ -61,6 +72,7 @@ class MsgType:
     AUTH_RESPONSE       = 0x40
     SUBSCRIBE_RESPONSE  = 0x41
     TOKEN_STATUS        = 0x42
+    SESSION_REHOME      = 0x43
 
 
 # 周期映射: 字符串 → uint8
@@ -277,7 +289,8 @@ def decode_snapshot(payload: bytes, header_symbol_id: int):
 def encode_history_request(request_id: int, symbol_id: int, period_str: str,
                            start_time: int, end_time: int,
                            max_count: int, symbol_code: str,
-                           adjust: str = 'none') -> bytes:
+                           adjust: str = 'none',
+                           history_v2_options: bytes = b'') -> bytes:
     """构建 HISTORY_REQUEST 完整消息
 
     payload 格式 (29 + 2 + code_len [+ adjust]):
@@ -285,6 +298,7 @@ def encode_history_request(request_id: int, symbol_id: int, period_str: str,
       + start_time(8) + end_time(8) + max_count(4)
       + code_len(2) + code(N)
       + adjust(1, 可选扩展: 0=none, 1=forward, 2=backward)
+      + History V2 options(24, 可选)
     """
     period = PERIOD_MAP.get(period_str, 1)
     adjust_code = ADJUST_MAP.get(adjust)
@@ -300,6 +314,9 @@ def encode_history_request(request_id: int, symbol_id: int, period_str: str,
     payload += struct.pack('!H', len(code_bytes))
     payload += code_bytes
     payload += struct.pack('B', adjust_code)
+    if history_v2_options:
+        history_v2_protocol.RequestOptions.decode(history_v2_options)
+        payload += history_v2_options
 
     return build_message(MsgType.HISTORY_REQUEST, 0, payload)
 
