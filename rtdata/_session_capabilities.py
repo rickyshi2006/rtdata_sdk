@@ -9,7 +9,8 @@ SCHEMA_VERSION = 1
 WIRE_STRUCT = struct.Struct("!BBHII")
 
 FEATURE_REHOME = 1 << 0
-KNOWN_FEATURE_MASK = FEATURE_REHOME
+FEATURE_HANDOFF_TICKET = 1 << 1
+KNOWN_FEATURE_MASK = FEATURE_REHOME | FEATURE_HANDOFF_TICKET
 FLAG_DISCOVERY_REQUIRED = 1 << 0
 KNOWN_FLAG_MASK = FLAG_DISCOVERY_REQUIRED
 
@@ -81,6 +82,14 @@ def rehome_capabilities(role: Role = Role.RTDATA) -> SessionCapabilities:
     )
 
 
+def handoff_capabilities(role: Role = Role.RTDATA) -> SessionCapabilities:
+    return SessionCapabilities(
+        role=role,
+        flags=FLAG_DISCOVERY_REQUIRED,
+        feature_mask=FEATURE_REHOME | FEATURE_HANDOFF_TICKET,
+    )
+
+
 def rehome_eligible(value: SessionCapabilities) -> bool:
     try:
         value.validate()
@@ -89,4 +98,10 @@ def rehome_eligible(value: SessionCapabilities) -> bool:
     return bool(
         value.feature_mask & FEATURE_REHOME
         and value.flags & FLAG_DISCOVERY_REQUIRED
+    )
+
+
+def handoff_eligible(value: SessionCapabilities) -> bool:
+    return rehome_eligible(value) and bool(
+        value.feature_mask & FEATURE_HANDOFF_TICKET
     )

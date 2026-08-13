@@ -132,6 +132,7 @@ class RtdataClient:
         )
         self._session_rehome_requested = False
         self._session_rehome_target = ""
+        self._session_handoff_ticket = b""
         self._handled_migration_ids = set()
         self._handled_migration_order = deque()
 
@@ -246,6 +247,7 @@ class RtdataClient:
         self._session_capability.reset("new_connection")
         self._session_rehome_requested = False
         self._session_rehome_target = ""
+        self._session_handoff_ticket = b""
         self._symbol_map_event.clear()
         self._symbol_map.load_cache()
 
@@ -333,6 +335,9 @@ class RtdataClient:
                 if isinstance(supported, list)
                 else []
             )
+        self._session_capability.set_handoff_enabled(
+            "session_rehome_handoff_v1" in self._protocol_features
+        )
         remote_version = info.get('symbol_map_version', 0)
 
         logger.info(
@@ -1200,9 +1205,16 @@ class RtdataClient:
     def _begin_session_capability_negotiation(self):
         if not self._session_capability.advertise:
             return
+        self._session_capability.set_handoff_enabled(
+            "session_rehome_handoff_v1" in self._protocol_features
+        )
         if "session_rehome_v1" not in self._protocol_features_supported:
             self._session_capability.mark_peer_unsupported()
             logger.info("Session rehome capability unavailable")
+            return
+        if "session_rehome_handoff_v1" not in self._protocol_features:
+            self._session_capability.mark_peer_unsupported()
+            logger.info("Session handoff capability unavailable")
             return
         conn = self._conn
         if conn is None:
@@ -1233,7 +1245,8 @@ class RtdataClient:
             )
 
     def _handle_session_rehome(self, payload: bytes):
-        if not self._session_capability.snapshot().rehome_eligible:
+        capability = self._session_capability.snapshot()
+        if not capability.handoff_eligible:
             logger.warning("Ignoring SESSION_REHOME without negotiated capability")
             return
         try:
@@ -1258,12 +1271,19 @@ class RtdataClient:
             return
         self._session_rehome_requested = True
         self._session_rehome_target = request.target_node_id
+        self._session_handoff_ticket = request.handoff_ticket
+        if not self._session_handoff_ticket:
+            self._session_rehome_requested = False
+            self._session_rehome_target = ""
+            logger.warning("Ignoring SESSION_REHOME without handoff ticket")
+            return
         if not conn.request_reconnect(
             "session rehome requested",
             require_pre_reconnect_success=True,
         ):
             self._session_rehome_requested = False
             self._session_rehome_target = ""
+            self._session_handoff_ticket = b""
             logger.warning("SESSION_REHOME could not start reconnect")
 
     @staticmethod
@@ -1504,6 +1524,11 @@ class RtdataClient:
         self._auth_error = ""
         self._auth_event.clear()
         self._symbol_map_event.clear()
+        if (self._session_rehome_requested and self._session_handoff_ticket and
+                (not self._conn or not self._conn.send(proto.build_message(
+                    proto.MsgType.SESSION_HANDOFF_OFFER, 0,
+                    self._session_handoff_ticket)))):
+            raise RuntimeError("Connection lost while sending session handoff ticket")
         if not self._conn or not self._conn.send(proto.encode_auth(self._token)):
             raise RuntimeError("Connection lost while sending re-authentication")
 
@@ -1564,6 +1589,7 @@ class RtdataClient:
     def _handle_reconnect_completed(self):
         self._session_rehome_requested = False
         self._session_rehome_target = ""
+        self._session_handoff_ticket = b""
 
     def _alloc_request_id(self) -> int:
         with self._request_id_lock:

@@ -62,7 +62,7 @@ class SessionProtocolTest(unittest.TestCase):
             capabilities.SessionCapabilities.decode(bytes(encoded))
 
         encoded = bytearray(capabilities.rehome_capabilities().encode())
-        encoded[7] = 0x02
+        encoded[7] = 0x04
         with self.assertRaisesRegex(ValueError, "feature"):
             capabilities.SessionCapabilities.decode(bytes(encoded))
 
@@ -106,7 +106,10 @@ class SessionRehomeClientTest(unittest.TestCase):
         )
         connection = FakeConnection()
         client._conn = connection
-        client._protocol_features_supported = ["session_rehome_v1"]
+        client._protocol_features_supported = [
+            "session_rehome_v1", "session_rehome_handoff_v1"
+        ]
+        client._protocol_features = ["session_rehome_handoff_v1"]
         return client, connection
 
     def negotiate(self, client, connection):
@@ -124,7 +127,7 @@ class SessionRehomeClientTest(unittest.TestCase):
         )
         self.assertEqual(offer.role, capabilities.Role.RTDATA)
 
-        ack = capabilities.rehome_capabilities(
+        ack = capabilities.handoff_capabilities(
             capabilities.Role.CLOUD
         ).encode()
         client._dispatch_message(
@@ -180,7 +183,9 @@ class SessionRehomeClientTest(unittest.TestCase):
     def test_rehome_requires_negotiation_and_deduplicates(self):
         client, connection = self.make_client()
         payload = rehome_protocol.RehomeRequest(
-            migration_id=7, target_node_id="node_aliyun"
+            migration_id=7, target_node_id="node_aliyun",
+            flags=rehome_protocol.FLAG_HANDOFF_TICKET,
+            handoff_ticket=b"signed-ticket"
         ).encode()
         client._dispatch_message(
             proto.MsgType.SESSION_REHOME, 0, payload, 1, connection
