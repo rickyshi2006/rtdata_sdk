@@ -26,6 +26,8 @@ from . import _protocol as proto
 from . import _history_v2_protocol as history_v2
 from ._connection import Connection
 from ._history_capability_runtime import HistoryCapabilityRuntime
+from ._session_capability_runtime import SessionCapabilityRuntime
+from . import _session_rehome_protocol as session_rehome
 from ._history_segment_cache import HistorySegmentCache
 from ._history_v2_stream import HistoryV2RequestState
 from ._symbol_map import SymbolMap
@@ -99,6 +101,8 @@ class RtdataClient:
         history_v2_default: bool = False,
         history_v2_max_block_bytes: int = 256 * 1024,
         history_capability_ack_timeout: float = 1.0,
+        session_rehome_advertise: bool = False,
+        session_capability_ack_timeout: float = 1.0,
     ):
         self._token = token
         self._host = host
@@ -118,6 +122,18 @@ class RtdataClient:
             max_block_bytes=history_v2_max_block_bytes,
             ack_timeout=history_capability_ack_timeout,
         )
+        self._session_capability = SessionCapabilityRuntime(
+            advertise=bool(
+                session_rehome_advertise
+                and api_url
+                and auto_reconnect
+            ),
+            ack_timeout=session_capability_ack_timeout,
+        )
+        self._session_rehome_requested = False
+        self._session_rehome_target = ""
+        self._handled_migration_ids = set()
+        self._handled_migration_order = deque()
 
         self._symbol_map = SymbolMap(cache_dir=symbol_cache_dir)
         history_cache_base_dir = history_cache_dir if history_cache_dir is not None else symbol_cache_dir
@@ -227,6 +243,9 @@ class RtdataClient:
             self._conn.close()
             self._conn = None
         self._history_capability.reset("new_connection")
+        self._session_capability.reset("new_connection")
+        self._session_rehome_requested = False
+        self._session_rehome_target = ""
         self._symbol_map_event.clear()
         self._symbol_map.load_cache()
 
@@ -243,6 +262,7 @@ class RtdataClient:
         )
         self._conn._on_reconnected = self._handle_reconnected
         self._conn._on_before_reconnect = self._before_reconnect
+        self._conn._on_reconnect_completed = self._handle_reconnect_completed
 
         self._conn.connect(timeout=timeout)
         self._conn.start_recv_loop()
@@ -343,6 +363,7 @@ class RtdataClient:
             send_cancel=True,
         )
         self._history_capability.reset("closed")
+        self._session_capability.reset("closed")
         self._callback_stop.set()
         if self._callback_thread and self._callback_thread.is_alive():
             self._callback_thread.join(timeout=3)
@@ -1082,6 +1103,10 @@ class RtdataClient:
             self._handle_auth_response(payload)
         elif msg_type == proto.MsgType.CAPABILITY_ACK:
             self._handle_history_capability_ack(payload)
+        elif msg_type == proto.MsgType.SESSION_CAPABILITY_ACK:
+            self._handle_session_capability_ack(payload)
+        elif msg_type == proto.MsgType.SESSION_REHOME:
+            self._handle_session_rehome(payload)
         elif msg_type == proto.MsgType.SYMBOL_MAP:
             self._handle_symbol_map(payload)
         elif msg_type in (proto.MsgType.SNAPSHOT_FULL, proto.MsgType.SNAPSHOT_DELTA):
@@ -1123,6 +1148,7 @@ class RtdataClient:
         if success:
             logger.info("Authenticated")
             self._begin_history_capability_negotiation()
+            self._begin_session_capability_negotiation()
         else:
             if self._is_terminal_auth_error(error_msg) and self._conn:
                 self._conn.suspend_auto_reconnect()
@@ -1170,6 +1196,75 @@ class RtdataClient:
                 "Invalid history capability ACK; using V1: %s",
                 snapshot.fallback_reason,
             )
+
+    def _begin_session_capability_negotiation(self):
+        if not self._session_capability.advertise:
+            return
+        if "session_rehome_v1" not in self._protocol_features_supported:
+            self._session_capability.mark_peer_unsupported()
+            logger.info("Session rehome capability unavailable")
+            return
+        conn = self._conn
+        if conn is None:
+            self._session_capability.reset("connection_unavailable")
+            return
+        if self._session_capability.begin_offer(
+            lambda payload: conn.send(
+                proto.build_message(
+                    proto.MsgType.SESSION_CAPABILITY_OFFER, 0, payload
+                )
+            )
+        ):
+            logger.info("Session rehome capability OFFER sent")
+        else:
+            logger.warning("Session rehome capability OFFER send failed")
+
+    def _handle_session_capability_ack(self, payload: bytes):
+        if not self._session_capability.handle_ack(payload):
+            logger.debug("Ignoring unexpected session capability ACK")
+            return
+        snapshot = self._session_capability.snapshot()
+        if snapshot.negotiated:
+            logger.info("Session rehome capability ACK accepted")
+        else:
+            logger.warning(
+                "Invalid session rehome capability ACK: %s",
+                snapshot.fallback_reason,
+            )
+
+    def _handle_session_rehome(self, payload: bytes):
+        if not self._session_capability.snapshot().rehome_eligible:
+            logger.warning("Ignoring SESSION_REHOME without negotiated capability")
+            return
+        try:
+            request = session_rehome.RehomeRequest.decode(payload)
+        except ValueError as exc:
+            logger.warning("Invalid SESSION_REHOME payload: %s", exc)
+            return
+        if request.migration_id in self._handled_migration_ids:
+            logger.info(
+                "Ignoring duplicate SESSION_REHOME migration_id=%s",
+                request.migration_id,
+            )
+            return
+        self._handled_migration_ids.add(request.migration_id)
+        self._handled_migration_order.append(request.migration_id)
+        while len(self._handled_migration_order) > 256:
+            expired = self._handled_migration_order.popleft()
+            self._handled_migration_ids.discard(expired)
+
+        conn = self._conn
+        if conn is None:
+            return
+        self._session_rehome_requested = True
+        self._session_rehome_target = request.target_node_id
+        if not conn.request_reconnect(
+            "session rehome requested",
+            require_pre_reconnect_success=True,
+        ):
+            self._session_rehome_requested = False
+            self._session_rehome_target = ""
+            logger.warning("SESSION_REHOME could not start reconnect")
 
     @staticmethod
     def _is_terminal_auth_error(error_msg: str) -> bool:
@@ -1351,6 +1446,7 @@ class RtdataClient:
     def _handle_disconnected(self, reason: str):
         self._authenticated = False
         self._history_capability.reset(reason or "disconnected")
+        self._session_capability.reset(reason or "disconnected")
 
         if not self._auth_event.is_set():
             self._auth_success = False
@@ -1381,8 +1477,27 @@ class RtdataClient:
                 self._do_discovery(timeout=10.0)
                 self._conn._host = self._host
                 self._conn._port = self._port
+                if (
+                    self._session_rehome_requested
+                    and self._session_rehome_target
+                    and self._current_node_id != self._session_rehome_target
+                ):
+                    raise DiscoveryError(
+                        "discovery returned node "
+                        f"{self._current_node_id or '<unknown>'}, expected "
+                        f"{self._session_rehome_target}"
+                    )
+                return True
             except Exception as e:
+                if self._session_rehome_requested:
+                    logger.warning(
+                        "Required rehome discovery failed; old endpoint will not be reused: %s",
+                        e,
+                    )
+                    raise
                 logger.warning(f"Re-discovery failed, using cached endpoint: {e}")
+                return False
+        return not self._session_rehome_requested
 
     def _handle_reconnected(self):
         self._auth_success = False
@@ -1446,6 +1561,10 @@ class RtdataClient:
             self.current_node_id or "unknown",
         )
 
+    def _handle_reconnect_completed(self):
+        self._session_rehome_requested = False
+        self._session_rehome_target = ""
+
     def _alloc_request_id(self) -> int:
         with self._request_id_lock:
             rid = self._next_request_id
@@ -1507,6 +1626,18 @@ class RtdataClient:
     @property
     def history_capability_fallback_reason(self) -> str:
         return self._history_capability.snapshot().fallback_reason
+
+    @property
+    def session_rehome_negotiated(self) -> bool:
+        return self._session_capability.snapshot().rehome_eligible
+
+    @property
+    def session_capability_state(self) -> str:
+        return self._session_capability.snapshot().state
+
+    @property
+    def session_capability_fallback_reason(self) -> str:
+        return self._session_capability.snapshot().fallback_reason
 
     @property
     def token_status(self) -> Optional[TokenStatus]:

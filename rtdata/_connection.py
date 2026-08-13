@@ -45,10 +45,12 @@ class Connection:
         # 重连回调（由 Client 设置）
         self._on_reconnected: Optional[Callable] = None
         self._on_before_reconnect: Optional[Callable] = None  # 重连前（discovery 等）
+        self._on_reconnect_completed: Optional[Callable] = None
 
         # 防止并发重连
         self._reconnect_lock = threading.Lock()
         self._reconnecting = False
+        self._require_pre_reconnect_success = False
 
     @property
     def connected(self) -> bool:
@@ -134,6 +136,24 @@ class Connection:
             self._recv_thread.join(timeout=3)
         if self._heartbeat_thread and self._heartbeat_thread.is_alive():
             self._heartbeat_thread.join(timeout=3)
+
+    def request_reconnect(self, reason: str,
+                          *, require_pre_reconnect_success: bool = False) -> bool:
+        """主动切断当前 socket 并保留自动重连状态。"""
+        with self._reconnect_lock:
+            if not self._auto_reconnect or self._stop_event.is_set():
+                return False
+            self._require_pre_reconnect_success = (
+                self._require_pre_reconnect_success
+                or require_pre_reconnect_success
+            )
+            sock = self._sock
+            connected = self._connected
+            reconnecting = self._reconnecting
+        if sock is None or not connected:
+            return reconnecting
+        self._handle_disconnect(reason, sock)
+        return True
 
     # ========================================================================
     # 接收循环
@@ -279,12 +299,30 @@ class Connection:
 
             try:
                 # 重连前回调（服务发现，更新 host:port）
+                required_discovery_satisfied = False
                 if self._on_before_reconnect:
                     try:
-                        self._on_before_reconnect()
+                        pre_reconnect_ok = self._on_before_reconnect()
+                        required_discovery_satisfied = pre_reconnect_ok is True
+                        if (
+                            self._require_pre_reconnect_success
+                            and not required_discovery_satisfied
+                        ):
+                            raise ConnectionError(
+                                "Required endpoint discovery did not succeed"
+                            )
                     except Exception as e:
+                        if self._require_pre_reconnect_success:
+                            raise
                         logger.warning(f"Pre-reconnect callback failed: {e}")
 
+                if (
+                    self._require_pre_reconnect_success
+                    and not required_discovery_satisfied
+                ):
+                    raise ConnectionError(
+                        "Reconnect policy changed; endpoint must be rediscovered"
+                    )
                 self._do_connect(timeout=10.0)
                 # 重新启动接收循环（必须在认证之前启动，以便接收认证响应）
                 sock = self._sock
@@ -327,6 +365,12 @@ class Connection:
                         "Connection lost while restoring reconnect state")
 
                 logger.info("Reconnected successfully")
+                self._require_pre_reconnect_success = False
+                if self._on_reconnect_completed:
+                    try:
+                        self._on_reconnect_completed()
+                    except Exception as e:
+                        logger.warning(f"Reconnect completion callback failed: {e}")
                 return
             except Exception as e:
                 logger.warning(f"Reconnect failed: {e}")

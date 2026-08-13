@@ -45,7 +45,9 @@ class API:
                  history_v2_advertise: bool = False,
                  history_v2_default: bool = False,
                  history_v2_max_block_bytes: int = 256 * 1024,
-                 history_capability_ack_timeout: float = 1.0):
+                 history_capability_ack_timeout: float = 1.0,
+                 session_rehome_advertise: bool = False,
+                 session_capability_ack_timeout: float = 1.0):
         self._client = RtdataClient(
             token=token,
             api_url=api_url,
@@ -58,6 +60,8 @@ class API:
             history_v2_default=history_v2_default,
             history_v2_max_block_bytes=history_v2_max_block_bytes,
             history_capability_ack_timeout=history_capability_ack_timeout,
+            session_rehome_advertise=session_rehome_advertise,
+            session_capability_ack_timeout=session_capability_ack_timeout,
         )
         self._connected = False
 
@@ -242,6 +246,18 @@ class API:
     @property
     def history_capability_fallback_reason(self) -> str:
         return self._client.history_capability_fallback_reason
+
+    @property
+    def session_rehome_negotiated(self) -> bool:
+        return self._client.session_rehome_negotiated
+
+    @property
+    def session_capability_state(self) -> str:
+        return self._client.session_capability_state
+
+    @property
+    def session_capability_fallback_reason(self) -> str:
+        return self._client.session_capability_fallback_reason
 
     @property
     def token_status(self) -> Optional[TokenStatus]:

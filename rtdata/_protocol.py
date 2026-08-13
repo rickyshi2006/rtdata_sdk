@@ -49,6 +49,8 @@ class MsgType:
     SYMBOL_LIST_RESPONSE = 0x13
     CAPABILITY_OFFER    = 0x19
     CAPABILITY_ACK      = 0x1A
+    SESSION_CAPABILITY_OFFER = 0x1B
+    SESSION_CAPABILITY_ACK = 0x1C
     HISTORY_BEGIN       = 0x28
     HISTORY_DATA        = 0x29
     HISTORY_END         = 0x2A
@@ -70,6 +72,7 @@ class MsgType:
     AUTH_RESPONSE       = 0x40
     SUBSCRIBE_RESPONSE  = 0x41
     TOKEN_STATUS        = 0x42
+    SESSION_REHOME      = 0x43
 
 
 # 周期映射: 字符串 → uint8
