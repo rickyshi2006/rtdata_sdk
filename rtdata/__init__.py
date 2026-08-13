@@ -23,7 +23,7 @@ from .exceptions import (
     DiscoveryError,
 )
 
-__version__ = '0.1.7.post1'
+__version__ = '0.1.7.post2'
 
 __all__ = [
     'API',

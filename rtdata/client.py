@@ -56,6 +56,9 @@ class RtdataClient:
         self._port = port
         self._api_url = api_url
         self._current_node_id = ""
+        self._pending_rehome: Optional[dict] = None
+        self._rehome_lock = threading.Lock()
+        self._seen_migrations = []
         self._heartbeat_interval = heartbeat_interval
         self._auto_reconnect = auto_reconnect
         self._async_callbacks = async_callbacks
@@ -205,10 +208,15 @@ class RtdataClient:
             self.current_node_id or "unknown",
         )
 
-    def _do_discovery(self, timeout: float):
+    def _do_discovery(self, timeout: float, target_node_id: Optional[str] = None):
         from . import _discovery as discovery
 
-        info = discovery.discover_endpoint(self._api_url, self._token, timeout=timeout)
+        info = discovery.discover_endpoint(
+            self._api_url, self._token, timeout=timeout,
+            target_node_id=target_node_id)
+        if target_node_id and info.get('node_id') != target_node_id:
+            raise DiscoveryError(
+                f"Targeted discovery returned {info.get('node_id')!r}, expected {target_node_id!r}")
         self._host = info['tcp_host']
         self._port = info['tcp_port']
         self._current_node_id = info.get('node_id', "") or ""
@@ -594,6 +602,10 @@ class RtdataClient:
         elif msg_type == proto.MsgType.HISTORY_RESPONSE:
             logger.info(f"Received HISTORY_RESPONSE, payload_len={len(payload)}")
             self._handle_history_response(payload)
+        elif msg_type == proto.MsgType.SESSION_CAPABILITY_ACK:
+            self._handle_session_capability_ack(payload)
+        elif msg_type == proto.MsgType.SESSION_REHOME:
+            self._handle_session_rehome(payload)
         elif msg_type in proto.RESPONSE_QUERY_MAP:
             self._handle_finance_response(payload)
         else:
@@ -607,6 +619,8 @@ class RtdataClient:
         self._auth_event.set()
         if success:
             logger.info("Authenticated")
+            if self._conn:
+                self._conn.send(proto.encode_session_capability_offer())
         else:
             logger.error(f"Auth failed: {error_msg}")
 
@@ -757,11 +771,18 @@ class RtdataClient:
 
     def _before_reconnect(self):
         if self._api_url:
+            with self._rehome_lock:
+                rehome = self._pending_rehome
+                if rehome and time.monotonic() >= rehome['deadline']:
+                    self._pending_rehome = None
+                    rehome = None
             try:
-                self._do_discovery(timeout=10.0)
+                self._do_discovery(10.0, (rehome or {}).get('target_node_id'))
                 self._conn._host = self._host
                 self._conn._port = self._port
             except Exception as e:
+                if rehome:
+                    raise
                 logger.warning(f"Re-discovery failed, using cached endpoint: {e}")
 
     def _handle_reconnected(self):
@@ -769,6 +790,11 @@ class RtdataClient:
         self._auth_error = ""
         self._auth_event.clear()
         self._symbol_map_event.clear()
+        with self._rehome_lock:
+            rehome = self._pending_rehome
+        if rehome and (not self._conn or not self._conn.send(
+                proto.encode_session_handoff_offer(rehome['handoff_ticket']))):
+            raise RuntimeError("Connection lost while sending handoff ticket")
         if not self._conn or not self._conn.send(proto.encode_auth(self._token)):
             raise RuntimeError("Connection lost while sending re-authentication")
 
@@ -780,6 +806,11 @@ class RtdataClient:
 
         if not self._auth_success:
             raise RuntimeError(f"Re-auth failed: {self._auth_error}")
+        if rehome:
+            with self._rehome_lock:
+                if (self._pending_rehome and
+                        self._pending_rehome['migration_id'] == rehome['migration_id']):
+                    self._pending_rehome = None
 
         if not self._symbol_map_event.wait(timeout=30):
             if not self._conn or not self._conn.connected:
@@ -822,6 +853,39 @@ class RtdataClient:
             "Reconnect state restored: node_id=%s",
             self.current_node_id or "unknown",
         )
+
+    def _handle_session_capability_ack(self, payload: bytes):
+        try:
+            ack = proto.decode_session_capability_ack(payload)
+        except ValueError as e:
+            logger.warning(f"Invalid session capability ACK: {e}")
+            return
+        logger.info("Session rehome capability acknowledged: features=0x%x",
+                    ack['features'])
+
+    def _handle_session_rehome(self, payload: bytes):
+        try:
+            request = proto.decode_session_rehome(payload)
+        except (ValueError, UnicodeDecodeError) as e:
+            logger.warning(f"Invalid session rehome request: {e}")
+            return
+        if not request['handoff_ticket']:
+            logger.warning("Ignoring session rehome without handoff ticket")
+            return
+        with self._rehome_lock:
+            if request['migration_id'] in self._seen_migrations:
+                return
+            self._seen_migrations.append(request['migration_id'])
+            del self._seen_migrations[:-64]
+            request['deadline'] = time.monotonic() + 25.0
+            self._pending_rehome = request
+        logger.info("Session rehome requested: target=%s migration_id=%s",
+                    request['target_node_id'], request['migration_id'])
+        if self._conn and self._conn._sock:
+            try:
+                self._conn._sock.shutdown(2)
+            except OSError:
+                pass
 
     def _alloc_request_id(self) -> int:
         with self._request_id_lock:

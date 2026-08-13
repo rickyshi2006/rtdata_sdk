@@ -38,6 +38,9 @@ class MsgType:
     TOKEN_SYNC          = 0x06
     TOKEN_FULL_SYNC     = 0x07
     SUBSCRIPTION_DEMAND = 0x0A
+    SESSION_CAPABILITY_OFFER = 0x1B
+    SESSION_CAPABILITY_ACK = 0x1C
+    SESSION_HANDOFF_OFFER = 0x1D
 
     HISTORY_REQUEST     = 0x10
     HISTORY_RESPONSE    = 0x11
@@ -57,6 +60,14 @@ class MsgType:
     UNSUBSCRIBE_REQUEST = 0x31
     AUTH_RESPONSE       = 0x40
     SUBSCRIBE_RESPONSE  = 0x41
+    SESSION_REHOME      = 0x43
+
+SESSION_CAPABILITY_SCHEMA_VERSION = 1
+SESSION_ROLE_RTDATA = 3
+SESSION_FLAG_DISCOVERY_REQUIRED = 1
+SESSION_FEATURE_REHOME = 1
+SESSION_FEATURE_HANDOFF_TICKET = 2
+SESSION_REHOME_FLAG_HANDOFF_TICKET = 1
 
 
 # 周期映射: 字符串 → uint8
@@ -101,6 +112,51 @@ def decode_header(data: bytes):
 def build_message(msg_type: int, symbol_id: int, payload: bytes) -> bytes:
     header = encode_header(len(payload), symbol_id, msg_type)
     return header + payload
+
+def encode_session_capability_offer() -> bytes:
+    return build_message(
+        MsgType.SESSION_CAPABILITY_OFFER, 0,
+        struct.pack('!BBHII', 1, SESSION_ROLE_RTDATA,
+                    SESSION_FLAG_DISCOVERY_REQUIRED,
+                    SESSION_FEATURE_REHOME | SESSION_FEATURE_HANDOFF_TICKET, 0))
+
+def decode_session_capability_ack(payload: bytes) -> dict:
+    if len(payload) != 12:
+        raise ValueError('session capability ACK must be exactly 12 bytes')
+    schema, role, flags, features, reserved = struct.unpack('!BBHII', payload)
+    if schema != 1 or reserved != 0:
+        raise ValueError('invalid session capability ACK')
+    return {'role': role, 'flags': flags, 'features': features}
+
+def decode_session_rehome(payload: bytes) -> dict:
+    if len(payload) < 14:
+        raise ValueError('session rehome payload is too short')
+    schema, reason, flags, migration_id, node_len = struct.unpack('!BBHQH', payload[:14])
+    if schema != 1 or reason not in (1, 2) or migration_id == 0:
+        raise ValueError('invalid session rehome identity')
+    if flags & ~SESSION_REHOME_FLAG_HANDOFF_TICKET:
+        raise ValueError('invalid session rehome flags')
+    end = 14 + node_len
+    if node_len == 0 or len(payload) < end:
+        raise ValueError('invalid session rehome target')
+    target = payload[14:end].decode('utf-8')
+    ticket = b''
+    if flags & SESSION_REHOME_FLAG_HANDOFF_TICKET:
+        if len(payload) < end + 4:
+            raise ValueError('missing handoff ticket')
+        size = struct.unpack('!I', payload[end:end + 4])[0]
+        if size == 0 or size > 4096 or len(payload) != end + 4 + size:
+            raise ValueError('invalid handoff ticket')
+        ticket = payload[end + 4:]
+    elif len(payload) != end:
+        raise ValueError('unexpected session rehome extension')
+    return {'reason': reason, 'migration_id': migration_id,
+            'target_node_id': target, 'handoff_ticket': ticket}
+
+def encode_session_handoff_offer(ticket: bytes) -> bytes:
+    if not ticket or len(ticket) > 4096:
+        raise ValueError('invalid handoff ticket')
+    return build_message(MsgType.SESSION_HANDOFF_OFFER, 0, ticket)
 
 
 # ============================================================================

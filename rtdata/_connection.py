@@ -265,10 +265,7 @@ class Connection:
             try:
                 # 重连前回调（服务发现，更新 host:port）
                 if self._on_before_reconnect:
-                    try:
-                        self._on_before_reconnect()
-                    except Exception as e:
-                        logger.warning(f"Pre-reconnect callback failed: {e}")
+                    self._on_before_reconnect()
 
                 self._do_connect(timeout=10.0)
                 # 重新启动接收循环（必须在认证之前启动，以便接收认证响应）
