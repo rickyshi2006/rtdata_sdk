@@ -12,6 +12,7 @@ from rtdata import RtdataClient
 from rtdata import _protocol as proto
 from rtdata import _session_capabilities as capabilities
 from rtdata import _session_rehome_protocol as rehome_protocol
+from rtdata import _session_handoff_protocol as handoff_protocol
 
 
 def wait_until(predicate, timeout=5.0):
@@ -90,7 +91,7 @@ class GatewayHandler(socketserver.BaseRequestHandler):
                 elif msg_type == proto.MsgType.SESSION_CAPABILITY_OFFER:
                     offer = capabilities.SessionCapabilities.decode(payload)
                     state.record_offer(offer)
-                    ack = capabilities.rehome_capabilities(
+                    ack = capabilities.handoff_capabilities(
                         capabilities.Role.CLOUD
                     ).encode()
                     self.request.sendall(
@@ -98,6 +99,8 @@ class GatewayHandler(socketserver.BaseRequestHandler):
                             proto.MsgType.SESSION_CAPABILITY_ACK, 0, ack
                         )
                     )
+                elif msg_type == proto.MsgType.SESSION_HANDOFF_OFFER:
+                    handoff_protocol.HandoffTicket.decode(payload)
                 elif msg_type == proto.MsgType.SUBSCRIBE_REQUEST:
                     count = struct.unpack("!I", payload[:4])[0]
                     symbol_ids = list(
@@ -113,10 +116,16 @@ class GatewayHandler(socketserver.BaseRequestHandler):
                         )
                     ]
                     if state.claim_rehome():
+                        ticket = handoff_protocol.make_ticket(
+                            "loopback-token", state.node_id, "node_aliyun",
+                            42, "loopback-secret"
+                        )
                         rehome = rehome_protocol.RehomeRequest(
                             migration_id=42,
                             target_node_id="node_aliyun",
                             reason=rehome_protocol.RehomeReason.NODE_DEGRADED,
+                            flags=rehome_protocol.FLAG_HANDOFF_TICKET,
+                            handoff_ticket=ticket,
                         ).encode()
                         messages.append(
                             proto.build_message(
@@ -171,8 +180,8 @@ class DiscoveryHandler(BaseHTTPRequestHandler):
             "symbol_map_version": 1,
             "symbol_count": 1,
             "protocol": {
-                "features_supported": ["session_rehome_v1"],
-                "features_enabled": [],
+                "features_supported": ["session_rehome_v1", "session_rehome_handoff_v1"],
+                "features_enabled": ["session_rehome_v1", "session_rehome_handoff_v1"],
             },
         })
 

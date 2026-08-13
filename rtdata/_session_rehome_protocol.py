@@ -7,8 +7,11 @@ from enum import IntEnum
 
 SCHEMA_VERSION = 1
 FLAGS = 0
+FLAG_HANDOFF_TICKET = 1 << 0
+KNOWN_FLAGS = FLAG_HANDOFF_TICKET
 PREFIX_STRUCT = struct.Struct("!BBHQH")
 MAX_TARGET_NODE_ID_BYTES = 128
+MAX_HANDOFF_TICKET_BYTES = 8192
 
 
 class RehomeReason(IntEnum):
@@ -22,6 +25,7 @@ class RehomeRequest:
     target_node_id: str
     reason: RehomeReason = RehomeReason.CLUSTER_FAILBACK
     flags: int = FLAGS
+    handoff_ticket: bytes = b""
     schema_version: int = SCHEMA_VERSION
 
     def validate(self) -> None:
@@ -31,8 +35,13 @@ class RehomeRequest:
             RehomeReason(self.reason)
         except ValueError as exc:
             raise ValueError("invalid session rehome reason") from exc
-        if self.flags != FLAGS:
+        if self.flags & ~KNOWN_FLAGS:
             raise ValueError("invalid session rehome flags")
+        has_ticket = bool(self.flags & FLAG_HANDOFF_TICKET)
+        if has_ticket != bool(self.handoff_ticket):
+            raise ValueError("invalid session rehome handoff ticket")
+        if len(self.handoff_ticket) > MAX_HANDOFF_TICKET_BYTES:
+            raise ValueError("session rehome handoff ticket is too large")
         if not 0 < self.migration_id <= 0xFFFFFFFFFFFFFFFF:
             raise ValueError("session rehome migration id must be non-zero")
         if not isinstance(self.target_node_id, str):
@@ -44,13 +53,17 @@ class RehomeRequest:
     def encode(self) -> bytes:
         self.validate()
         target = self.target_node_id.encode("utf-8")
-        return PREFIX_STRUCT.pack(
+        payload = PREFIX_STRUCT.pack(
             self.schema_version,
             int(self.reason),
             self.flags,
             self.migration_id,
             len(target),
         ) + target
+        if self.handoff_ticket:
+            payload += struct.pack("!I", len(self.handoff_ticket))
+            payload += self.handoff_ticket
+        return payload
 
     @classmethod
     def decode(cls, payload: bytes) -> "RehomeRequest":
@@ -59,24 +72,35 @@ class RehomeRequest:
         schema_version, reason, flags, migration_id, target_len = (
             PREFIX_STRUCT.unpack(payload[:PREFIX_STRUCT.size])
         )
-        if target_len > MAX_TARGET_NODE_ID_BYTES or (
-            len(payload) != PREFIX_STRUCT.size + target_len
-        ):
+        base_len = PREFIX_STRUCT.size + target_len
+        if target_len > MAX_TARGET_NODE_ID_BYTES or len(payload) < base_len:
             raise ValueError("invalid session rehome target node length")
         try:
-            target_node_id = payload[PREFIX_STRUCT.size:].decode("utf-8")
+            target_node_id = payload[PREFIX_STRUCT.size:base_len].decode("utf-8")
         except UnicodeDecodeError as exc:
             raise ValueError("invalid session rehome target node encoding") from exc
         try:
             decoded_reason = RehomeReason(reason)
         except ValueError as exc:
             raise ValueError("invalid session rehome reason") from exc
+        handoff_ticket = b""
+        if flags & FLAG_HANDOFF_TICKET:
+            if len(payload) < base_len + 4:
+                raise ValueError("session rehome handoff ticket length is missing")
+            ticket_len = struct.unpack("!I", payload[base_len:base_len + 4])[0]
+            if (ticket_len == 0 or ticket_len > MAX_HANDOFF_TICKET_BYTES or
+                    len(payload) != base_len + 4 + ticket_len):
+                raise ValueError("invalid session rehome handoff ticket length")
+            handoff_ticket = payload[base_len + 4:]
+        elif len(payload) != base_len:
+            raise ValueError("unexpected session rehome extension")
         result = cls(
             schema_version=schema_version,
             reason=decoded_reason,
             flags=flags,
             migration_id=migration_id,
             target_node_id=target_node_id,
+            handoff_ticket=handoff_ticket,
         )
         result.validate()
         return result

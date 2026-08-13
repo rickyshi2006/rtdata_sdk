@@ -12,6 +12,7 @@ class SessionCapabilitySnapshot:
     state: str
     negotiated: bool
     rehome_eligible: bool
+    handoff_eligible: bool
     fallback_reason: str
 
 
@@ -27,11 +28,22 @@ class SessionCapabilityRuntime:
         self._generation = 0
         self._state = "disabled" if not advertise else "idle"
         self._negotiated = False
+        self._handoff_negotiated = False
+        self._handoff_enabled = False
         self._fallback_reason = ""
 
     @property
     def offer_payload(self) -> bytes:
         return self._offer.encode()
+
+    def set_handoff_enabled(self, enabled: bool) -> None:
+        with self._lock:
+            self._handoff_enabled = bool(enabled)
+            self._offer = (
+                capabilities.handoff_capabilities()
+                if self._handoff_enabled
+                else capabilities.rehome_capabilities()
+            )
 
     def reset(self, reason: str = "") -> None:
         with self._lock:
@@ -39,6 +51,7 @@ class SessionCapabilityRuntime:
             self._generation += 1
             self._state = "disabled" if not self.advertise else "idle"
             self._negotiated = False
+            self._handoff_negotiated = False
             self._fallback_reason = reason
 
     def mark_peer_unsupported(self) -> None:
@@ -93,6 +106,7 @@ class SessionCapabilityRuntime:
                 return True
             self._state = "negotiated"
             self._negotiated = True
+            self._handoff_negotiated = capabilities.handoff_eligible(acknowledged)
             self._fallback_reason = ""
             return True
 
@@ -102,6 +116,7 @@ class SessionCapabilityRuntime:
                 state=self._state,
                 negotiated=self._negotiated,
                 rehome_eligible=self._negotiated,
+                handoff_eligible=self._handoff_negotiated,
                 fallback_reason=self._fallback_reason,
             )
 
@@ -129,6 +144,7 @@ class SessionCapabilityRuntime:
         self._cancel_timer_locked()
         self._state = "fallback"
         self._negotiated = False
+        self._handoff_negotiated = False
         self._fallback_reason = reason
 
     def _cancel_timer_locked(self) -> None:
