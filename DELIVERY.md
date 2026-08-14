@@ -3,9 +3,9 @@
 ## 当前包信息
 
 - 包名：`rtdata`
-- 当前版本：`0.1.7`
+- 当前版本：`0.3.0`
 
-本次提升版本号，产物更新为 `0.1.7`。
+本次提升版本号，产物更新为 `0.3.0`。
 
 ## 当前支持范围
 
@@ -23,8 +23,8 @@
 
 文件：
 
-- `rtdata-0.1.7-py3-none-any.whl`
-- `rtdata-0.1.7.tar.gz`
+- `rtdata-0.3.0-py3-none-any.whl`
+- `rtdata-0.3.0.tar.gz`
 
 优先建议对外提供 `.whl`。
 
@@ -125,19 +125,25 @@ print(api.last_subscribe_rejected)
 ### 安装 wheel
 
 ```bash
-pip install rtdata-0.1.7-py3-none-any.whl
+pip install rtdata-0.3.0-py3-none-any.whl
+```
+
+推荐安装 History V2 高速历史流依赖：
+
+```bash
+pip install "rtdata-0.3.0-py3-none-any.whl[history-v2]"
 ```
 
 ### 安装源码包
 
 ```bash
-pip install rtdata-0.1.7.tar.gz
+pip install rtdata-0.3.0.tar.gz
 ```
 
 ### 升级安装
 
 ```bash
-pip install --upgrade rtdata-0.1.7-py3-none-any.whl
+pip install --upgrade "rtdata-0.3.0-py3-none-any.whl[history-v2]"
 ```
 
 ## 建议同时交付给客户的内容

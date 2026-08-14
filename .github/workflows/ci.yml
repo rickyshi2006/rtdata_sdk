@@ -35,9 +35,23 @@ jobs:
           python -m build
       - name: Verify wheel installation
         run: |
+          EXPECTED_VERSION="$(python -c 'from rtdata._version import __version__; print(__version__)')"
+          WHEEL="$(find dist -maxdepth 1 -type f -name '*.whl' -print -quit)"
+          test -n "${WHEEL}"
           python -m venv /tmp/rtdata-wheel-test
-          /tmp/rtdata-wheel-test/bin/pip install dist/*.whl
-          /tmp/rtdata-wheel-test/bin/python -c "import rtdata; print(rtdata.__version__)"
+          /tmp/rtdata-wheel-test/bin/pip install "${WHEEL}[history-v2]"
+          /tmp/rtdata-wheel-test/bin/python - "${EXPECTED_VERSION}" <<'PY'
+          import sys
+
+          import rtdata
+          from rtdata._history_v2_codec import zstd_available
+          from rtdata._history_v2_stream import HistoryV2RequestState
+
+          assert rtdata.__version__ == sys.argv[1]
+          assert zstd_available()
+          assert HistoryV2RequestState is not None
+          print(f"verified rtdata {rtdata.__version__} with History V2")
+          PY
       - uses: actions/upload-artifact@v4
         with:
           name: rtdata-dist
