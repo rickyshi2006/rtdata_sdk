@@ -1,5 +1,6 @@
 import threading
 import time
+import json
 import unittest
 import socket
 from dataclasses import replace
@@ -7,6 +8,7 @@ from unittest.mock import Mock, patch
 
 from rtdata import RtdataClient
 from rtdata import _protocol as proto
+from rtdata import _discovery as discovery
 from rtdata import _session_capabilities as capabilities
 from rtdata import _session_rehome_protocol as rehome_protocol
 from rtdata._connection import Connection
@@ -227,15 +229,54 @@ class SessionRehomeClientTest(unittest.TestCase):
         client._session_rehome_requested = True
         client._session_rehome_target = "node_aliyun"
 
-        def wrong_node(timeout):
-            del timeout
-            client._host = "oracle.invalid"
-            client._port = 9100
-            client._current_node_id = "node_oracle"
-
-        with patch.object(client, "_do_discovery", side_effect=wrong_node):
+        with patch(
+            "rtdata._discovery.discover_endpoint",
+            return_value={
+                "tcp_host": "oracle.invalid",
+                "tcp_port": 9100,
+                "node_id": "node_oracle",
+            },
+        ):
             with self.assertRaisesRegex(Exception, "expected node_aliyun"):
                 client._before_reconnect()
+
+    def test_rehome_discovery_targets_requested_node(self):
+        client, connection = self.make_client()
+        self.negotiate(client, connection)
+        client._session_rehome_requested = True
+        client._session_rehome_target = "node_aliyun"
+
+        with patch.object(client, "_do_discovery") as discover:
+            client._before_reconnect()
+
+        discover.assert_called_once_with(
+            timeout=10.0, target_node_id="node_aliyun"
+        )
+
+    def test_targeted_discovery_sends_handoff_marker(self):
+        response = Mock()
+        response.read.return_value = json.dumps({
+            "tcp_host": "aliyun.invalid",
+            "tcp_port": 9100,
+            "node_id": "node_aliyun",
+        }).encode("utf-8")
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+
+        with patch.object(
+            discovery, "_urlopen_with_retry", return_value=response
+        ) as urlopen:
+            discovery.discover_endpoint(
+                "https://gateway.invalid", "token",
+                target_node_id="node_aliyun",
+            )
+
+        request = urlopen.call_args.args[0]
+        self.assertEqual(
+            json.loads(request.data),
+            {"token": "token", "target_node_id": "node_aliyun"},
+        )
+        self.assertEqual(request.get_header("X-session-handoff"), "1")
 
     def test_connection_rehome_keeps_auto_reconnect_enabled(self):
         connection = Connection(

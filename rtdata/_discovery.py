@@ -42,17 +42,21 @@ def _urlopen_with_retry(req, timeout, max_retries=2):
 
 
 def discover_endpoint(api_url: str, token: str,
-                      timeout: float = DEFAULT_TIMEOUT) -> dict:
+                      timeout: float = DEFAULT_TIMEOUT,
+                      target_node_id: Optional[str] = None) -> dict:
     """POST /api/v1/connect — 获取 TCP 地址和 symbol_map 版本
 
     返回: {"tcp_host": str, "tcp_port": int,
            "symbol_map_version": int, "symbol_count": int}
     """
     url = api_url.rstrip('/') + '/api/v1/connect'
-    body = json.dumps({"token": token}).encode('utf-8')
-    req = Request(url, data=body, method='POST',
-                  headers={'Content-Type': 'application/json',
-                           'User-Agent': _UA})
+    request_body = {"token": token}
+    headers = {'Content-Type': 'application/json', 'User-Agent': _UA}
+    if target_node_id:
+        request_body['target_node_id'] = target_node_id
+        headers['X-Session-Handoff'] = '1'
+    body = json.dumps(request_body).encode('utf-8')
+    req = Request(url, data=body, method='POST', headers=headers)
     try:
         with _urlopen_with_retry(req, timeout) as resp:
             data = json.loads(resp.read().decode('utf-8'))
