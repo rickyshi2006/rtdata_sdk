@@ -1,9 +1,9 @@
 # rtdata SDK
 
-`rtdata` 是一个零外部依赖的 Python SDK，用于通过 Cloud Gateway 获取实时行情、历史 K 线和财务数据。
+`rtdata` 是一个基础功能零外部依赖的 Python SDK，用于通过 Cloud Gateway 获取实时行情、历史 K 线和财务数据。History V2 高速历史流需要可选的 Zstandard 依赖。
 
 ## 特性
-- 纯标准库实现，支持 Python `>= 3.9`
+- 基础功能使用纯标准库实现，支持 Python `>= 3.9`
 - 支持 HTTPS 服务发现，自动获取 TCP 接入地址
 - 自动下载并缓存 symbol map，按版本增量更新
 - 自动心跳、自动重连、断线后自动恢复订阅
@@ -31,8 +31,16 @@ pip install -e .
 安装打包产物：
 
 ```bash
-pip install rtdata-0.1.7-py3-none-any.whl
+pip install rtdata-0.3.0-py3-none-any.whl
 ```
+
+推荐需要高速历史查询的客户端安装 History V2 依赖：
+
+```bash
+pip install "rtdata-0.3.0-py3-none-any.whl[history-v2]"
+```
+
+未安装 `history-v2` 可选依赖时，SDK 不会声明 History V2 能力，并自动使用兼容的 History V1，不影响实时订阅和其他基础功能。
 
 ## Token 兑换
 

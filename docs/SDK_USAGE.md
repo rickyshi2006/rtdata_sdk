@@ -12,7 +12,7 @@
 - 本地历史分段二进制缓存
 - 自动重连与自动恢复订阅
 
-当前版本：`0.1.7`
+当前版本：`0.3.0`
 
 ## 1.1 当前支持范围
 
@@ -34,8 +34,16 @@ pip install -e .
 ### 2.2 安装 wheel
 
 ```bash
-pip install rtdata-0.1.7-py3-none-any.whl
+pip install rtdata-0.3.0-py3-none-any.whl
 ```
+
+需要 History V2 高速历史流时，安装可选的 Zstandard 依赖：
+
+```bash
+pip install "rtdata-0.3.0-py3-none-any.whl[history-v2]"
+```
+
+未安装该可选依赖时，SDK 自动使用兼容的 History V1。
 
 ## 3. 两套入口
 
