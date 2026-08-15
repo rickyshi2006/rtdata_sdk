@@ -101,7 +101,7 @@ class RtdataClient:
         history_v2_default: bool = False,
         history_v2_max_block_bytes: int = 256 * 1024,
         history_capability_ack_timeout: float = 1.0,
-        session_rehome_advertise: bool = False,
+        session_rehome_advertise: bool = True,
         session_capability_ack_timeout: float = 1.0,
     ):
         self._token = token

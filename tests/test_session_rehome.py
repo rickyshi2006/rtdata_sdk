@@ -1,12 +1,13 @@
+import inspect
+import json
+import socket
 import threading
 import time
-import json
 import unittest
-import socket
 from dataclasses import replace
 from unittest.mock import Mock, patch
 
-from rtdata import RtdataClient
+from rtdata import API, RtdataClient
 from rtdata import _protocol as proto
 from rtdata import _discovery as discovery
 from rtdata import _session_capabilities as capabilities
@@ -95,17 +96,19 @@ class SessionRehomeClientTest(unittest.TestCase):
         self,
         *,
         api_url="https://discovery.invalid",
-        advertise=True,
+        advertise=None,
         auto_reconnect=True,
     ):
-        client = RtdataClient(
+        kwargs = dict(
             token="test",
             api_url=api_url,
             auto_reconnect=auto_reconnect,
-            session_rehome_advertise=advertise,
             session_capability_ack_timeout=0.5,
             async_callbacks=False,
         )
+        if advertise is not None:
+            kwargs["session_rehome_advertise"] = advertise
+        client = RtdataClient(**kwargs)
         connection = FakeConnection()
         client._conn = connection
         client._protocol_features_supported = [
@@ -141,11 +144,27 @@ class SessionRehomeClientTest(unittest.TestCase):
         )
         self.assertTrue(client.session_rehome_negotiated)
 
-    def test_requires_explicit_flag_and_api_url(self):
+    def test_public_defaults_enable_safe_rehome(self):
+        self.assertIs(
+            inspect.signature(RtdataClient).parameters[
+                "session_rehome_advertise"
+            ].default,
+            True,
+        )
+        self.assertIs(
+            inspect.signature(API).parameters[
+                "session_rehome_advertise"
+            ].default,
+            True,
+        )
+        client, connection = self.make_client()
+        self.negotiate(client, connection)
+
+    def test_safety_requirements_and_explicit_opt_out(self):
         for api_url, advertise, auto_reconnect in (
-            (None, True, True),
+            (None, None, True),
             ("https://discovery.invalid", False, True),
-            ("https://discovery.invalid", True, False),
+            ("https://discovery.invalid", None, False),
         ):
             client, connection = self.make_client(
                 api_url=api_url,

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.1 - 2026-08-15
+
+- 使用服务发现且启用自动重连时，默认声明安全 session rehome 能力，使客户端在节点
+  故障转移后自动返回账号首选节点。
+- 保留 `session_rehome_advertise=False` 显式关闭方式；固定 `host:port` 或关闭自动重连
+  的客户端仍不会声明迁移能力。
+
 ## 0.3.0 - 2026-08-14
 
 - 新增基于能力协商的 History V2 流式传输，采用列式差分编码和 Zstandard
