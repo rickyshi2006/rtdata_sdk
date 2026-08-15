@@ -12,7 +12,7 @@
 - 本地历史分段二进制缓存
 - 自动重连与自动恢复订阅
 
-当前版本：`0.3.0`
+当前版本：`0.3.1`
 
 ## 1.1 当前支持范围
 
@@ -34,13 +34,13 @@ pip install -e .
 ### 2.2 安装 wheel
 
 ```bash
-pip install rtdata-0.3.0-py3-none-any.whl
+pip install rtdata-0.3.1-py3-none-any.whl
 ```
 
 需要 History V2 高速历史流时，安装可选的 Zstandard 依赖：
 
 ```bash
-pip install "rtdata-0.3.0-py3-none-any.whl[history-v2]"
+pip install "rtdata-0.3.1-py3-none-any.whl[history-v2]"
 ```
 
 未安装该可选依赖时，SDK 自动使用兼容的 History V1。
@@ -139,7 +139,7 @@ API(
     symbol_cache_dir: str | None = None,
     history_cache_dir: str | None = None,
     history_cache_enabled: bool = True,
-    session_rehome_advertise: bool = False,
+    session_rehome_advertise: bool = True,
     session_capability_ack_timeout: float = 1.0,
 )
 ```
@@ -160,7 +160,7 @@ RtdataClient(
     history_cache_enabled: bool = True,
     async_callbacks: bool = True,
     callback_queue_size: int = 1000,
-    session_rehome_advertise: bool = False,
+    session_rehome_advertise: bool = True,
     session_capability_ack_timeout: float = 1.0,
 )
 ```
@@ -443,22 +443,22 @@ def on_token_status(status):
 
 因此断线后你通常不需要手动再次 `subscribe()`。
 
-### 11.1 安全节点迁移（可选）
+### 11.1 安全节点迁移
 
-需要 Cloud Gateway 主动把会话从异常节点迁移到健康节点时，可显式开启：
+SDK 默认允许 Cloud Gateway 将会话从异常节点迁移到健康节点，并在首选节点恢复后自动归位：
 
 ```python
 api = API(
     token="your_token",
     api_url="https://api.fengv2ray.tk",
-    session_rehome_advertise=True,
 )
 ```
 
-该能力默认关闭，并且只有同时配置 `api_url` 且 `auto_reconnect=True` 才会向服务端声明。收到迁移指令后，
+只有同时配置 `api_url` 且 `auto_reconnect=True` 才会向服务端声明该能力。收到迁移指令后，
 SDK 会终止当前在途查询、强制重新 discovery、重新认证并恢复订阅。迁移 discovery
 失败或返回的不是指定目标节点时，不会回落到旧节点地址；固定 `host:port` 客户端
-不会声明该能力，也不会被 Cloud Gateway 主动迁移。
+不会声明该能力，也不会被 Cloud Gateway 主动迁移。如需对 discovery 客户端关闭自动
+迁移，可显式设置 `session_rehome_advertise=False`。
 
 ## 12. 异常语义
 

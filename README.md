@@ -7,6 +7,7 @@
 - 支持 HTTPS 服务发现，自动获取 TCP 接入地址
 - 自动下载并缓存 symbol map，按版本增量更新
 - 自动心跳、自动重连、断线后自动恢复订阅
+- 使用服务发现时默认启用安全节点迁移，节点恢复后自动回到账号首选节点
 - 实时订阅语义为“最新值优先”的快照流，不是逐笔事件流
 - 历史 K 线支持本地分段二进制缓存，重复请求优先命中本地
 - 历史/财务查询失败会抛明确异常，不再把服务端失败误报为超时
@@ -31,13 +32,13 @@ pip install -e .
 安装打包产物：
 
 ```bash
-pip install rtdata-0.3.0-py3-none-any.whl
+pip install rtdata-0.3.1-py3-none-any.whl
 ```
 
 推荐需要高速历史查询的客户端安装 History V2 依赖：
 
 ```bash
-pip install "rtdata-0.3.0-py3-none-any.whl[history-v2]"
+pip install "rtdata-0.3.1-py3-none-any.whl[history-v2]"
 ```
 
 未安装 `history-v2` 可选依赖时，SDK 不会声明 History V2 能力，并自动使用兼容的 History V1，不影响实时订阅和其他基础功能。
@@ -92,7 +93,7 @@ with RtdataClient(
 ## 当前行为说明
 
 - 指定 `api_url` 后，SDK 会先做服务发现，再连接 discovery 返回的 TCP 节点。
-- `session_rehome_advertise=True` 可显式启用安全节点迁移；必须同时提供 `api_url` 并保持 `auto_reconnect=True`，默认关闭。
+- 安全节点迁移默认启用；必须同时提供 `api_url` 并保持 `auto_reconnect=True`。如需保持固定节点行为，可显式设置 `session_rehome_advertise=False`。
 - `API.subscribe()` / `API.get_kline()` / `API.get_finance()` 会在首次调用时自动连接；也可以先显式 `api.connect()`。
 - 实时订阅不是逐条完整回放；如果本地消费过慢，网关可能丢弃旧快照，或主动断开后由 SDK 自动重连。
 - 历史和财务查询是请求-响应语义。

@@ -236,7 +236,6 @@ class SessionRehomeLoopbackTest(unittest.TestCase):
                     symbol_cache_dir=cache_dir,
                     history_cache_enabled=False,
                     async_callbacks=False,
-                    session_rehome_advertise=True,
                     session_capability_ack_timeout=0.5,
                 )
                 with patch(
