@@ -1,43 +1,66 @@
-"""历史复权示例
+"""A 股、港股和美股历史复权示例。
 
-对同一只 A 股股票分别查询不复权、前复权、后复权日线，
-便于快速核对复权参数是否生效。
+用法:
+    python examples/history_adjust.py --token your_token
+
+需要网关配置相应市场的 K 线表和复权因子表，token 也必须拥有市场权限。
 """
+
+import argparse
 from datetime import datetime
 
 import rtdata
 
 
-TOKEN = "your_token"
-API_URL = "https://api.fengv2ray.tk"
-SYMBOL = "000001.SZ"
-START = "2015-01-01"
-END = "2015-03-31"
+CASES = (
+    ("A 股", "000001.SZ", "2025-06-09", "2025-06-16"),
+    ("港股", "00700.HK", "2025-06-09", "2025-06-12"),
+    ("美股", "AAPL.US", "2020-08-26", "2020-09-02"),
+)
 
 
-def fmt_row(row):
-    trade_date = datetime.fromtimestamp(row.timestamp / 1000).strftime("%Y-%m-%d")
+def fmt_row(row) -> str:
+    trade_time = datetime.fromtimestamp(row.timestamp / 1000).strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
     return (
-        f"{trade_date} "
-        f"O={row.open:.4f} H={row.high:.4f} L={row.low:.4f} C={row.close:.4f}"
+        f"{trade_time} O={row.open:.4f} H={row.high:.4f} "
+        f"L={row.low:.4f} C={row.close:.4f}"
     )
 
 
-with rtdata.API(token=TOKEN, api_url=API_URL, history_cache_enabled=False) as api:
-    rows_none = api.get_kline(SYMBOL, period="1d", start=START, end=END, adjust="none")
-    rows_forward = api.get_kline(SYMBOL, period="1d", start=START, end=END, adjust="forward")
-    rows_backward = api.get_kline(SYMBOL, period="1d", start=START, end=END, adjust="backward")
+def main() -> None:
+    parser = argparse.ArgumentParser(description="查询 A/HK/US 历史复权 K 线")
+    parser.add_argument("--token", required=True, help="客户端 token")
+    parser.add_argument(
+        "--api-url",
+        default=rtdata.api.DEFAULT_API_URL,
+        help="服务发现 API 地址",
+    )
+    args = parser.parse_args()
 
-    print(f"symbol={SYMBOL} range={START}~{END}")
-    print(f"none rows={len(rows_none)}")
-    print(f"forward rows={len(rows_forward)}")
-    print(f"backward rows={len(rows_backward)}")
+    with rtdata.API(
+        token=args.token,
+        api_url=args.api_url,
+        history_cache_enabled=False,
+    ) as api:
+        for market, symbol, start, end in CASES:
+            result = {
+                adjust: api.get_kline(
+                    symbol,
+                    period="1d",
+                    start=start,
+                    end=end,
+                    adjust=adjust,
+                )
+                for adjust in ("none", "forward", "backward")
+            }
 
-    if rows_none and rows_forward and rows_backward:
-        sample_indexes = sorted({0, min(5, len(rows_none) - 1), len(rows_none) - 1})
-        print("\n对比样例:")
-        for idx in sample_indexes:
-            print("-" * 72)
-            print("none    ", fmt_row(rows_none[idx]))
-            print("forward ", fmt_row(rows_forward[idx]))
-            print("backward", fmt_row(rows_backward[idx]))
+            print(f"\n{market} symbol={symbol} range={start}~{end}")
+            for adjust, rows in result.items():
+                sample = fmt_row(rows[0]) if rows else "no data"
+                print(f"  {adjust:<8} rows={len(rows):>5} first={sample}")
+
+
+if __name__ == "__main__":
+    main()

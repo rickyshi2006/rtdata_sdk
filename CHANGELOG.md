@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.2 - 2026-08-23
+
+- 修正财务请求（包括 `API.get_finance_pit()` 和 `RtdataClient.get_finance_pit()`）的默认
+  `query_type` 为 `4`（income + balance + cashflow），与 Cloud Gateway 协议一致；TTM
+  和财务比率仍显式使用协议保留值 `0`。
+- 补充 A 股、港股、美股财务报表、TTM、财务比率和 PIT 能力边界说明；PIT 仍仅对有
+  `announcement_date` 的数据源可用。
+- 更新 History V2、三市场复权、Token 状态和 session rehome 的使用文档与示例。
+
 ## 0.3.1 - 2026-08-15
 
 - 使用服务发现且启用自动重连时，默认声明安全 session rehome 能力，使客户端在节点

@@ -3,28 +3,41 @@
 ## 当前包信息
 
 - 包名：`rtdata`
-- 当前版本：`0.3.0`
+- 当前版本：`0.3.2`
 
-本次提升版本号，产物更新为 `0.3.0`。
+本次提升版本号，产物更新为 `0.3.2`。
+
+## v0.3.2 变更摘要
+
+- `API.get_finance_pit()` 和 `RtdataClient.get_finance_pit()` 默认使用
+  `query_type=4`，与网关的 `1/2/3/4` PIT 协议一致。
+- 文档覆盖 History V2、可选 Zstandard、自动 session rehome、Token 状态、A/HK/US
+  历史复权和三市场财务字段差异。
+- 新增/更新 `examples/finance_query.py`、`history_adjust.py`、`history_v2.py` 和
+  `session_rehome.py`。
+
+本次仅生成候选代码和构建产物；尚未创建正式 `v0.3.2` tag、GitHub Release，也未修改
+正式网关或客户端部署。
 
 ## 当前支持范围
 
-- 实时数据：支持 A 股、期货、港股
-- 历史 K 线：支持 A 股、期货、港股
-- 财务数据：仅支持 A 股
+- 实时数据：A 股、港股、美股、期货、外汇（按网关配置和权限）
+- 历史 K 线：A 股、港股、美股、期货、期权（按网关配置）
+- 历史复权：A 股、港股、美股
+- 财务数据：A 股、港股、美股；PIT 当前主要支持含公告日的 A 股源表
 
 后续如有市场范围调整，再按实际能力更新文档与交付说明。
 
 ## 当前交付产物
 
-目录：
+构建输出目录：
 
-- `/home/Project/rtdata_sdk/dist/`
+- 仓库根目录下的 `dist/`
 
 文件：
 
-- `rtdata-0.3.0-py3-none-any.whl`
-- `rtdata-0.3.0.tar.gz`
+- `rtdata-0.3.2-py3-none-any.whl`
+- `rtdata-0.3.2.tar.gz`
 
 优先建议对外提供 `.whl`。
 
@@ -125,25 +138,25 @@ print(api.last_subscribe_rejected)
 ### 安装 wheel
 
 ```bash
-pip install rtdata-0.3.0-py3-none-any.whl
+pip install rtdata-0.3.2-py3-none-any.whl
 ```
 
 推荐安装 History V2 高速历史流依赖：
 
 ```bash
-pip install "rtdata-0.3.0-py3-none-any.whl[history-v2]"
+pip install "rtdata-0.3.2-py3-none-any.whl[history-v2]"
 ```
 
 ### 安装源码包
 
 ```bash
-pip install rtdata-0.3.0.tar.gz
+pip install rtdata-0.3.2.tar.gz
 ```
 
 ### 升级安装
 
 ```bash
-pip install --upgrade "rtdata-0.3.0-py3-none-any.whl[history-v2]"
+pip install --upgrade "rtdata-0.3.2-py3-none-any.whl[history-v2]"
 ```
 
 ## 建议同时交付给客户的内容

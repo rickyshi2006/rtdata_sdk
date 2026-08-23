@@ -11,14 +11,21 @@
 - 本地 symbol map 缓存
 - 本地历史分段二进制缓存
 - 自动重连与自动恢复订阅
+- History V2 能力协商、列式压缩和 V1 自动回退
+- 安全 session rehome（故障转移后回到账号首选节点）
 
-当前版本：`0.3.1`
+当前版本：`0.3.2`
 
 ## 1.1 当前支持范围
 
-- 实时数据：支持 A 股、期货、港股
-- 历史 K 线：支持 A 股、期货、港股
-- 财务数据：仅支持 A 股
+- 实时数据：A 股、港股、美股、期货、外汇（由网关配置和 token 权限决定）
+- 历史 K 线：A 股、港股、美股、期货、期权（由网关表配置决定）
+- 历史复权：候选网关提供 A 股、港股、美股的 `none` / `forward` / `backward`
+- 财务数据：A 股、港股、美股；不同市场的字段 schema 可能不同
+- PIT：默认支持有 `announcement_date` 的数据源，当前主要为 A 股
+
+历史查询由 Cloud Gateway 路由到其配置的数据节点（OLAP 或 TSDB）；SDK 不直接连接
+DolphinDB，后端切换不改变 `get_kline()` 的调用方式。
 
 后续如有市场范围调整，再按实际能力更新文档。
 
@@ -34,13 +41,13 @@ pip install -e .
 ### 2.2 安装 wheel
 
 ```bash
-pip install rtdata-0.3.1-py3-none-any.whl
+pip install rtdata-0.3.2-py3-none-any.whl
 ```
 
 需要 History V2 高速历史流时，安装可选的 Zstandard 依赖：
 
 ```bash
-pip install "rtdata-0.3.1-py3-none-any.whl[history-v2]"
+pip install "rtdata-0.3.2-py3-none-any.whl[history-v2]"
 ```
 
 未安装该可选依赖时，SDK 自动使用兼容的 History V1。
@@ -139,6 +146,10 @@ API(
     symbol_cache_dir: str | None = None,
     history_cache_dir: str | None = None,
     history_cache_enabled: bool = True,
+    history_v2_advertise: bool = False,
+    history_v2_default: bool = False,
+    history_v2_max_block_bytes: int = 256 * 1024,
+    history_capability_ack_timeout: float = 1.0,
     session_rehome_advertise: bool = True,
     session_capability_ack_timeout: float = 1.0,
 )
@@ -160,6 +171,10 @@ RtdataClient(
     history_cache_enabled: bool = True,
     async_callbacks: bool = True,
     callback_queue_size: int = 1000,
+    history_v2_advertise: bool = False,
+    history_v2_default: bool = False,
+    history_v2_max_block_bytes: int = 256 * 1024,
+    history_capability_ack_timeout: float = 1.0,
     session_rehome_advertise: bool = True,
     session_capability_ack_timeout: float = 1.0,
 )
@@ -303,8 +318,9 @@ backward_rows = api.get_kline(
 
 限制：
 
-- 当前仅 `SH` / `SZ` 股票支持 `forward` / `backward`
-- 非股票品种传入复权参数时，服务端会返回拒绝
+- 当前候选网关支持 A 股、港股、美股的 `forward` / `backward`
+- 期货、期权等非股票品种传入复权参数时，服务端通常会返回拒绝
+
 ### 7.5 分钟线示例
 
 ```python
@@ -361,6 +377,31 @@ api = rtdata.API(
 )
 ```
 
+### 8.5 History V2
+
+History V2 是可选的列式压缩历史流。客户端需要安装 `history-v2` extra，并显式开启
+能力声明和默认选择：
+
+```python
+with rtdata.API(
+    token="your_token",
+    api_url="https://api.fengv2ray.tk",
+    history_v2_advertise=True,
+    history_v2_default=True,
+    history_cache_enabled=False,
+) as api:
+    print(api.history_capability_state)
+    print(api.history_v2_eligible)
+    print(api.history_capability_fallback_reason)
+    rows = api.get_kline(
+        "000001.SZ", period="1d", start="2025-06-02", end="2025-06-17"
+    )
+```
+
+`history_v2_advertise` 负责能力协商，`history_v2_default` 决定协商成功后是否优先发送
+V2。缺少 Zstandard、网关不支持或 ACK 超时都会安全回退到 V1；回退原因可通过
+`history_capability_fallback_reason` 查看。
+
 ## 9. 财务查询
 
 ### 9.1 财务报表
@@ -372,6 +413,9 @@ fd = api.get_finance(
     query_type=4,
 )
 ```
+
+`query_type` 取值：`1=income`、`2=balance`、`3=cashflow`、`4=all`。普通财务报表和
+PIT 的默认值均为 `4`。
 
 ### 9.2 TTM
 
@@ -388,9 +432,18 @@ fd = api.get_finance_ttm(
 fd = api.get_finance_pit(
     stock_code="601318.SH",
     trade_date="2017-06-30",
-    query_type=0,
 )
 ```
+
+也可以显式传 `query_type=1/2/3/4`。A 股、港股、美股的财务字段由各自源表决定，
+客户端应按返回的 `FinanceData.data` 实际字段处理。若港股或美股源表没有
+`announcement_date`，PIT 会返回明确的 `QueryError`，例如：
+
+```text
+PIT query is unavailable for hk_stock: source data has no announcement_date
+```
+
+TTM 和财务比率接口同样支持 A/HK/US，但字段不保证三地完全相同。
 
 ### 9.4 财务比率
 
@@ -459,6 +512,14 @@ SDK 会终止当前在途查询、强制重新 discovery、重新认证并恢复
 失败或返回的不是指定目标节点时，不会回落到旧节点地址；固定 `host:port` 客户端
 不会声明该能力，也不会被 Cloud Gateway 主动迁移。如需对 discovery 客户端关闭自动
 迁移，可显式设置 `session_rehome_advertise=False`。
+
+连接后可查看协商状态：
+
+```python
+print(api.session_capability_state)
+print(api.session_rehome_negotiated)
+print(api.session_capability_fallback_reason)
+```
 
 ## 12. 异常语义
 
@@ -599,6 +660,8 @@ with RtdataClient(token="your_token", api_url="https://api.fengv2ray.tk") as cli
 - `examples/basic_usage.py`
 - `examples/history_kline.py`
 - `examples/history_adjust.py`
+- `examples/history_v2.py`
 - `examples/finance_query.py`
+- `examples/session_rehome.py`
 - `examples/test_subscribe2.py`
 - `examples/diagnose_realtime_stall.py`

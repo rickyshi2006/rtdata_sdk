@@ -409,9 +409,18 @@ def decode_history_response(payload: bytes):
 # FINANCE
 # ============================================================================
 
+# Gateway finance query types.  ``0`` is reserved for finance operations
+# which do not select a statement (for example TTM and ratios); regular and
+# PIT requests must use one of the four values below.
+FINANCE_QUERY_INCOME = 1
+FINANCE_QUERY_BALANCE = 2
+FINANCE_QUERY_CASHFLOW = 3
+FINANCE_QUERY_ALL = 4
+
+
 def encode_finance_request(msg_type: int, request_id: int,
                            stock_code: str, report_period: str,
-                           query_type: int = 0) -> bytes:
+                           query_type: int = FINANCE_QUERY_ALL) -> bytes:
     """构建财务查询请求
 
     payload: request_id(4) + code_len(2) + code(N)

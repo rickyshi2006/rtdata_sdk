@@ -1023,7 +1023,8 @@ class RtdataClient:
                               timeout=timeout, adjust=adjust)
 
     def get_finance(self, stock_code: str, report_period: str = '',
-                    query_type: int = 4, timeout: float = 30.0) -> FinanceData:
+                    query_type: int = proto.FINANCE_QUERY_ALL,
+                    timeout: float = 30.0) -> FinanceData:
         return self._do_finance_query(
             proto.MsgType.FINANCE_REQUEST, stock_code, report_period, query_type, timeout)
 
@@ -1033,7 +1034,8 @@ class RtdataClient:
             proto.MsgType.FINANCE_TTM_REQUEST, stock_code, as_of_date, 0, timeout)
 
     def get_finance_pit(self, stock_code: str, trade_date: str = '',
-                        query_type: int = 0, timeout: float = 30.0) -> FinanceData:
+                        query_type: int = proto.FINANCE_QUERY_ALL,
+                        timeout: float = 30.0) -> FinanceData:
         return self._do_finance_query(
             proto.MsgType.FINANCE_PIT_REQUEST, stock_code, trade_date, query_type, timeout)
 

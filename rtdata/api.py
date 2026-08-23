@@ -23,6 +23,7 @@ from datetime import date, datetime
 from typing import Optional, List, Union
 
 from .client import RtdataClient
+from . import _protocol as proto
 from .models import Quote, Kline, FinanceData, TokenStatus
 from .exceptions import ConnectionError
 
@@ -125,7 +126,8 @@ class API:
         return self._client.get_kline_for_today(symbol, period=period, timeout=timeout, adjust=adjust)
 
     def get_finance(self, stock_code: str, report_period: str = '',
-                    query_type: int = 4, timeout: float = 30.0) -> FinanceData:
+                    query_type: int = proto.FINANCE_QUERY_ALL,
+                    timeout: float = 30.0) -> FinanceData:
         """查询财务报表（利润表/资产负债表/现金流量表）"""
         self._ensure_connected()
         return self._client.get_finance(stock_code, report_period, query_type, timeout)
@@ -137,8 +139,13 @@ class API:
         return self._client.get_finance_ttm(stock_code, as_of_date, timeout)
 
     def get_finance_pit(self, stock_code: str, trade_date: str = '',
-                        query_type: int = 0, timeout: float = 30.0) -> FinanceData:
-        """查询 Point-in-Time（时点）数据"""
+                        query_type: int = proto.FINANCE_QUERY_ALL,
+                        timeout: float = 30.0) -> FinanceData:
+        """查询 Point-in-Time（时点）数据。
+
+        ``query_type`` 默认为 4（income + balance + cashflow），与网关
+        PIT 协议约定一致。需要单独查询一张表时传 1、2 或 3。
+        """
         self._ensure_connected()
         return self._client.get_finance_pit(stock_code, trade_date, query_type, timeout)
 
