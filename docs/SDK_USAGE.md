@@ -2,7 +2,7 @@
 
 ## 1. 概述
 
-`rtdata` 是一个面向 Cloud Gateway 的 Python SDK，支持：
+`rtdata` 是一个行情与财务数据 Python SDK，支持：
 
 - HTTPS 服务发现
 - TCP 实时行情订阅
@@ -18,14 +18,11 @@
 
 ## 1.1 当前支持范围
 
-- 实时数据：A 股、港股、美股、期货、外汇（由网关配置和 token 权限决定）
-- 历史 K 线：A 股、港股、美股、期货、期权（由网关表配置决定）
-- 历史复权：候选网关提供 A 股、港股、美股的 `none` / `forward` / `backward`
-- 财务数据：A 股、港股、美股；不同市场的字段 schema 可能不同
-- PIT：默认支持有 `announcement_date` 的数据源，当前主要为 A 股
-
-历史查询由 Cloud Gateway 路由到其配置的数据节点（OLAP 或 TSDB）；SDK 不直接连接
-DolphinDB，后端切换不改变 `get_kline()` 的调用方式。
+- 实时数据：A 股、港股、美股、期货、外汇（按账号权限）
+- 历史 K 线：A 股、港股、美股、期货、期权（按账号权限）
+- 历史复权：A 股、港股、美股的 `none` / `forward` / `backward`（按账号权限）
+- 财务数据：A 股、港股、美股（按账号权限）；不同市场的字段 schema 可能不同
+- PIT：当前支持 A 股；港股、美股暂不支持
 
 后续如有市场范围调整，再按实际能力更新文档。
 
@@ -318,8 +315,8 @@ backward_rows = api.get_kline(
 
 限制：
 
-- 当前候选网关支持 A 股、港股、美股的 `forward` / `backward`
-- 期货、期权等非股票品种传入复权参数时，服务端通常会返回拒绝
+- A 股、港股、美股支持 `forward` / `backward`
+- 期货、期权等非股票品种不支持复权
 
 ### 7.5 分钟线示例
 
@@ -399,7 +396,7 @@ with rtdata.API(
 ```
 
 `history_v2_advertise` 负责能力协商，`history_v2_default` 决定协商成功后是否优先发送
-V2。缺少 Zstandard、网关不支持或 ACK 超时都会安全回退到 V1；回退原因可通过
+V2。缺少 Zstandard、连接端不支持或 ACK 超时都会安全回退到 V1；回退原因可通过
 `history_capability_fallback_reason` 查看。
 
 ## 9. 财务查询
@@ -435,9 +432,9 @@ fd = api.get_finance_pit(
 )
 ```
 
-也可以显式传 `query_type=1/2/3/4`。A 股、港股、美股的财务字段由各自源表决定，
-客户端应按返回的 `FinanceData.data` 实际字段处理。若港股或美股源表没有
-`announcement_date`，PIT 会返回明确的 `QueryError`，例如：
+也可以显式传 `query_type=1/2/3/4`。A 股、港股、美股的财务字段不同，客户端应按
+返回的 `FinanceData.data` 实际字段处理。港股、美股 PIT 当前会返回明确的
+`QueryError`，例如：
 
 ```text
 PIT query is unavailable for hk_stock: source data has no announcement_date
@@ -498,7 +495,7 @@ def on_token_status(status):
 
 ### 11.1 安全节点迁移
 
-SDK 默认允许 Cloud Gateway 将会话从异常节点迁移到健康节点，并在首选节点恢复后自动归位：
+SDK 默认允许会话从异常节点迁移到健康节点，并在首选节点恢复后自动归位：
 
 ```python
 api = API(
@@ -510,7 +507,7 @@ api = API(
 只有同时配置 `api_url` 且 `auto_reconnect=True` 才会向服务端声明该能力。收到迁移指令后，
 SDK 会终止当前在途查询、强制重新 discovery、重新认证并恢复订阅。迁移 discovery
 失败或返回的不是指定目标节点时，不会回落到旧节点地址；固定 `host:port` 客户端
-不会声明该能力，也不会被 Cloud Gateway 主动迁移。如需对 discovery 客户端关闭自动
+不会声明该能力，也不会被主动迁移。如需对 discovery 客户端关闭自动
 迁移，可显式设置 `session_rehome_advertise=False`。
 
 连接后可查看协商状态：

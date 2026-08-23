@@ -1,9 +1,5 @@
 """诊断实时订阅是否发生客户端本地停读/停回调。
 
-用法示例:
-    python examples/diagnose_realtime_stall.py --token your_token --symbols 601919.SH
-    python examples/diagnose_realtime_stall.py --token your_token --symbols 601919.SH rb2605.SHF
-
 输出包含:
 - recv: 客户端本地收到并执行回调的时间
 - quote: 行情包内时间戳
@@ -11,7 +7,6 @@
 - monitor: SDK 内部已收消息数、行情数、回调队列长度、最新缓存年龄
 """
 
-import argparse
 import logging
 import threading
 import time
@@ -19,6 +14,14 @@ from datetime import datetime, timezone
 
 import rtdata
 from rtdata import Quote
+
+
+TOKEN = "your_token"
+API_URL = "https://api.fengv2ray.tk"
+SYMBOLS = ["601919.SH"]
+SYNC_CALLBACKS = False
+CALLBACK_QUEUE_SIZE = 1000
+MONITOR_INTERVAL = 1.0
 
 
 def fmt_quote_ts(ts_ms: int) -> str:
@@ -31,22 +34,13 @@ def fmt_recv_ts() -> str:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--token', default='your_token')
-    parser.add_argument('--symbols', nargs='+', default=['601919.SH'])
-    parser.add_argument('--api-url', default=rtdata.api.DEFAULT_API_URL)
-    parser.add_argument('--sync-callbacks', action='store_true', help='禁用异步回调队列，直接在收包线程执行回调')
-    parser.add_argument('--callback-queue-size', type=int, default=1000)
-    parser.add_argument('--monitor-interval', type=float, default=1.0)
-    args = parser.parse_args()
-
     logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 
     api = rtdata.API(
-        token=args.token,
-        api_url=args.api_url,
-        async_callbacks=not args.sync_callbacks,
-        callback_queue_size=args.callback_queue_size,
+        token=TOKEN,
+        api_url=API_URL,
+        async_callbacks=not SYNC_CALLBACKS,
+        callback_queue_size=CALLBACK_QUEUE_SIZE,
     )
 
     stop_event = threading.Event()
@@ -73,7 +67,7 @@ def main() -> None:
 
     def monitor_loop():
         client = api._client
-        while not stop_event.wait(args.monitor_interval):
+        while not stop_event.wait(MONITOR_INTERVAL):
             conn = client._conn
             is_connected = bool(conn and conn.connected)
             callback_qsize = client._callback_queue.qsize() if client._async_callbacks else 0
@@ -83,8 +77,8 @@ def main() -> None:
                 quotes_dropped = client._quotes_dropped
             subscribed = client.get_subscribed_symbols()
             latest_desc = 'none'
-            if args.symbols:
-                latest = client.get_quote(args.symbols[0])
+            if SYMBOLS:
+                latest = client.get_quote(SYMBOLS[0])
                 if latest is not None:
                     age_ms = int(time.time() * 1000) - int(latest.timestamp)
                     latest_desc = f'{latest.symbol}@{fmt_quote_ts(int(latest.timestamp))}/raw_age={age_ms}ms/bj_adj_age={age_ms + 8 * 3600 * 1000}ms'
@@ -98,9 +92,9 @@ def main() -> None:
     t = threading.Thread(target=monitor_loop, name='diag-monitor', daemon=True)
     t.start()
 
-    print(f'Subscribing: {args.symbols}', flush=True)
+    print(f'Subscribing: {SYMBOLS}', flush=True)
     api.connect()
-    api.subscribe(args.symbols)
+    api.subscribe(SYMBOLS)
 
     try:
         while True:

@@ -5,7 +5,7 @@
 非交易时间连接正常但不会收到行情推送。
 
 注意：实时流是最新值优先，不保证逐条完整回放；
-若回调过慢，云网关可能主动断开，SDK 会自动重连。
+若回调过慢，服务端可能主动断开，SDK 会自动重连。
 """
 import time
 import logging
@@ -22,7 +22,7 @@ SYMBOLS = [
     "rb2605.SHF",   # 螺纹钢期货
 ]
 
-# 推荐使用 API + 服务发现，不要在示例里暴露具体网关地址
+# 推荐使用 API + 服务发现
 api = rtdata.API(token="your_token", api_url="https://api.fengv2ray.tk")
 
 @api.on_quote

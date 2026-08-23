@@ -1,7 +1,7 @@
 # rtdata SDK
 
-`rtdata` 是面向 Cloud Gateway 的 Python SDK，用于实时行情、历史 K 线和财务数据
-查询。基础 SDK 仅依赖 Python 标准库；History V2 高速历史流可选用 Zstandard。
+`rtdata` 是用于实时行情、历史 K 线和财务数据查询的 Python SDK。基础功能仅依赖
+Python 标准库；History V2 高速历史流可选用 Zstandard。
 
 当前文档对应版本：**0.3.2**。
 
@@ -13,30 +13,20 @@
 - 实时行情采用“最新值优先”的快照流
 - History V1 兼容路径和可选的 History V2 列式压缩流
 - 本地历史分段二进制缓存，可按 `symbol + period + adjust` 缓存缺口
-- A 股、港股、美股的历史 K 线复权查询（`none` / `forward` / `backward`，由网关候选版提供）
+- A 股、港股、美股的历史 K 线复权查询（`none` / `forward` / `backward`）
 - A 股、港股、美股财务报表、TTM 和财务比率查询
 - Token 状态通知和订阅部分成功状态
 - 查询失败区分服务端拒绝、超时和连接中断
 
-## 支持范围与网关依赖
-
-SDK 只负责协议和客户端行为，最终可用市场由 Cloud Gateway 的表配置、版本和 token
-权限决定。当前候选网关的能力边界如下：
+## 支持范围
 
 | 功能 | 市场/品种 |
 | --- | --- |
-| 实时行情 | A 股、港股、美股、期货、外汇（按权限） |
-| 历史 K 线 | A 股、港股、美股、期货、期权（按网关表配置） |
-| 历史复权 | A 股、港股、美股；期货/期权不适用 |
-| 财务报表、TTM、财务比率 | A 股、港股、美股；字段按市场原始 schema 返回 |
-| PIT（Point-in-Time） | 默认支持有 `announcement_date` 的数据源，当前主要为 A 股 |
-
-历史行情实际查询节点（例如本地 OLAP 或独立 TSDB）由网关部署配置决定，SDK 调用方式
-不变。客户端不直接连接 DolphinDB，也不感知数据库路径。
-
-港股、美股 PIT 如果源表没有 `announcement_date`，网关会明确返回
-`QueryError`，这不是 SDK 参数或代码归一化失败。请以实际网关返回的 capability 和
-错误信息为准。
+| 实时行情 | A 股、港股、美股、期货、外汇（按账号权限） |
+| 历史 K 线 | A 股、港股、美股、期货、期权（按账号权限） |
+| 历史复权 | A 股、港股、美股（按账号权限）；期货/期权不适用 |
+| 财务报表、TTM、财务比率 | A 股、港股、美股（按账号权限）；字段按市场原始 schema 返回 |
+| PIT（Point-in-Time） | 当前支持 A 股；港股、美股暂不支持 |
 
 ## 安装
 
@@ -58,7 +48,7 @@ pip install "rtdata-0.3.2-py3-none-any.whl[history-v2]"
 pip install -e .
 ```
 
-未安装 `history-v2` 或网关不支持 History V2 时，SDK 会自动使用兼容的 History V1，
+未安装 `history-v2` 或连接端不支持 History V2 时，SDK 会自动使用兼容的 History V1；
 实时订阅、财务查询和普通历史查询仍可用。
 
 ## 快速开始
@@ -110,8 +100,8 @@ api = rtdata.API(
 )
 ```
 
-节点故障时，网关可把会话迁移到健康节点；SDK 会重新 discovery、认证并恢复已有订阅。
-首选节点恢复稳定后，网关可将会话迁回首选节点。只有同时使用服务发现并保持
+节点故障时，会话可迁移到健康节点；SDK 会重新 discovery、认证并恢复已有订阅。
+首选节点恢复稳定后，会话可自动迁回首选节点。只有同时使用服务发现并保持
 `auto_reconnect=True`（底层 `RtdataClient`）时才会声明该能力。固定 `host:port`、关闭
 自动重连或显式设置 `session_rehome_advertise=False` 的客户端不会被主动迁移。
 
@@ -179,8 +169,8 @@ backward_rows = api.get_kline(
 )
 ```
 
-复权结果由网关读取对应市场的 factor 表并完成计算；不同市场的数据字段和交易日历不
-应在客户端自行拼接。期货、期权等非股票品种传入复权参数时，网关通常会拒绝。
+不同市场的数据字段和交易日历无需在客户端自行拼接。期货、期权等非股票品种不支持
+复权。
 
 ### History V2
 
@@ -202,7 +192,7 @@ with rtdata.API(
 ```
 
 `history_v2_advertise` 负责能力协商，`history_v2_default` 决定协商成功后是否优先发
-送 V2 请求。协商超时、网关不支持或缺少 Zstandard 时，SDK 自动回退 V1；可通过
+送 V2 请求。协商超时、连接端不支持或缺少 Zstandard 时，SDK 自动回退 V1；可通过
 `history_capability_state` 和 `history_capability_fallback_reason` 查看原因。
 
 ### 本地历史缓存
@@ -238,7 +228,7 @@ api = rtdata.API(
 | 3 | cashflow（现金流量表） |
 | 4 | all（三表，默认） |
 
-普通财务报表和 PIT 的默认值现在都是 `query_type=4`，与网关协议一致：
+普通财务报表和 PIT 的默认值都是 `query_type=4`：
 
 ```python
 with rtdata.API(token="your_token", api_url="https://api.fengv2ray.tk") as api:
@@ -253,9 +243,9 @@ with rtdata.API(token="your_token", api_url="https://api.fengv2ray.tk") as api:
     pit = api.get_finance_pit("600519.SH", trade_date="2025-12-31")
 ```
 
-港股、美股财务字段与 A 股不同，`FinanceData.data` 会保留网关返回的原始字段；业务代码
-应按 `market` 和实际字段判断，不要假设三地 schema 完全相同。当前港股、美股源表没有
-`announcement_date` 时，PIT 会返回类似下面的明确错误：
+港股、美股财务字段与 A 股不同，`FinanceData.data` 会保留原始字段；业务代码应按
+`market` 和实际字段判断，不要假设三地 schema 完全相同。港股、美股 PIT 当前会返回
+明确的 `QueryError`：
 
 ```text
 PIT query is unavailable for hk_stock: source data has no announcement_date
@@ -263,7 +253,7 @@ PIT query is unavailable for hk_stock: source data has no announcement_date
 
 ## Token 状态
 
-新网关可推送 token 有效、即将到期、过期、禁用或撤销状态：
+SDK 可接收 token 有效、即将到期、过期、禁用或撤销状态通知：
 
 ```python
 @api.on_token_status
@@ -274,7 +264,7 @@ print(api.token_status)
 print(api.token_expires_at)
 ```
 
-旧网关不发送该消息时，`token_status` 保持为 `None`，不影响连接。
+未收到状态通知时，`token_status` 保持为 `None`，不影响连接。
 
 ## 异常语义
 
@@ -312,4 +302,5 @@ print(api.token_expires_at)
   - [`session_rehome.py`](./examples/session_rehome.py)：自动故障迁移与首选节点归位
   - [`token_status.py`](./examples/token_status.py)：Token 状态通知
 
-运行示例前请将 `your_token` 替换为真实 token，并确认网关和 token 具备相应市场权限。
+运行示例前请打开对应 `.py` 文件，将顶部的 `TOKEN` 替换为真实 token；其他参数也可
+直接在文件顶部修改，然后直接运行 `python examples/文件名.py`。

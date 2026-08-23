@@ -1,16 +1,15 @@
 """A 股、港股和美股历史复权示例。
 
-用法:
-    python examples/history_adjust.py --token your_token
-
-需要网关配置相应市场的 K 线表和复权因子表，token 也必须拥有市场权限。
+账号需要具备相应市场权限。
 """
 
-import argparse
 from datetime import datetime
 
 import rtdata
 
+
+TOKEN = "your_token"
+API_URL = "https://api.fengv2ray.tk"
 
 CASES = (
     ("A 股", "000001.SZ", "2025-06-09", "2025-06-16"),
@@ -30,18 +29,9 @@ def fmt_row(row) -> str:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="查询 A/HK/US 历史复权 K 线")
-    parser.add_argument("--token", required=True, help="客户端 token")
-    parser.add_argument(
-        "--api-url",
-        default=rtdata.api.DEFAULT_API_URL,
-        help="服务发现 API 地址",
-    )
-    args = parser.parse_args()
-
     with rtdata.API(
-        token=args.token,
-        api_url=args.api_url,
+        token=TOKEN,
+        api_url=API_URL,
         history_cache_enabled=False,
     ) as api:
         for market, symbol, start, end in CASES:

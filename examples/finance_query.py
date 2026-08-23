@@ -1,18 +1,19 @@
 """A 股、港股和美股财务数据示例。
 
-用法:
-    python examples/finance_query.py --token your_token
-
 覆盖普通财务报表、单表查询、TTM、财务比率和 PIT。港股、美股财务字段与 A 股不同，
-应按服务端返回的实际字段读取；源数据没有 announcement_date 时不支持 PIT。
+应按返回的实际字段读取；港股、美股当前不支持 PIT。
 """
 
-import argparse
 from typing import Any, Dict
 
 import rtdata
 from rtdata import FinanceData, QueryError
 
+
+TOKEN = "your_token"
+API_URL = "https://api.fengv2ray.tk"
+REPORT_PERIOD = "2025-12-31"
+PIT_DATE = "2025-12-31"
 
 SECURITIES = (
     ("A 股", "600519.SH"),
@@ -45,18 +46,7 @@ def try_show(title: str, query) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="查询 A/HK/US 财务数据")
-    parser.add_argument("--token", required=True, help="客户端 token")
-    parser.add_argument(
-        "--api-url",
-        default=rtdata.api.DEFAULT_API_URL,
-        help="服务发现 API 地址",
-    )
-    parser.add_argument("--report-period", default="2025-12-31")
-    parser.add_argument("--pit-date", default="2025-12-31")
-    args = parser.parse_args()
-
-    with rtdata.API(token=args.token, api_url=args.api_url) as api:
+    with rtdata.API(token=TOKEN, api_url=API_URL) as api:
         for market, code in SECURITIES:
             print(f"\n== {market} {code} ==")
 
@@ -64,35 +54,35 @@ def main() -> None:
             try_show(
                 "all statements",
                 lambda: api.get_finance(
-                    code, report_period=args.report_period
+                    code, report_period=REPORT_PERIOD
                 ),
             )
             try_show(
                 "income only",
                 lambda: api.get_finance(
                     code,
-                    report_period=args.report_period,
+                    report_period=REPORT_PERIOD,
                     query_type=1,
                 ),
             )
 
             try:
-                ttm = api.get_finance_ttm(code, as_of_date=args.report_period)
+                ttm = api.get_finance_ttm(code, as_of_date=REPORT_PERIOD)
                 print(f"TTM fields={len(ttm.data)}")
             except QueryError as exc:
                 print(f"TTM unavailable: {exc}")
             try:
                 ratios = api.get_finance_ratios(
-                    code, report_period=args.report_period
+                    code, report_period=REPORT_PERIOD
                 )
                 print(f"ratios fields={len(ratios.data)}")
             except QueryError as exc:
                 print(f"ratios unavailable: {exc}")
 
-            # v0.3.2 起默认 query_type=4，与网关 PIT 协议一致。
+            # v0.3.2 起默认 query_type=4。
             try_show(
                 "PIT",
-                lambda: api.get_finance_pit(code, trade_date=args.pit_date),
+                lambda: api.get_finance_pit(code, trade_date=PIT_DATE),
             )
 
 

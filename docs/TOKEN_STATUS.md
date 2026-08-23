@@ -1,6 +1,6 @@
 # Token 状态通知
 
-从 SDK `0.2.0` 开始，Cloud Gateway 可以通过独立的
+从 SDK `0.2.0` 开始，服务端可以通过独立的
 `TOKEN_STATUS (0x42)` 控制消息推送 Token 状态。现有
 `AUTH_RESPONSE` 格式保持不变。
 
@@ -31,5 +31,5 @@ print(api.token_expires_at)
 - `disabled`
 - `revoked`
 
-旧版网关不会发送此消息。新 SDK 在旧版网关下仍可正常连接，
+未启用该通知的服务端不会发送此消息。SDK 在这种情况下仍可正常连接，
 此时 `api.token_status` 为 `None`。
