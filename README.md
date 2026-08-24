@@ -3,7 +3,7 @@
 `rtdata` 是用于实时行情、历史 K 线和财务数据查询的 Python SDK。基础功能仅依赖
 Python 标准库；History V2 高速历史流可选用 Zstandard。
 
-当前文档对应版本：**0.3.2**。
+当前文档对应版本：**0.3.3**。
 
 ## 功能概览
 
@@ -33,13 +33,13 @@ Python 标准库；History V2 高速历史流可选用 Zstandard。
 ### 安装 wheel
 
 ```bash
-pip install rtdata-0.3.2-py3-none-any.whl
+pip install rtdata-0.3.3-py3-none-any.whl
 ```
 
 需要 History V2 时安装可选依赖：
 
 ```bash
-pip install "rtdata-0.3.2-py3-none-any.whl[history-v2]"
+pip install "rtdata-0.3.3-py3-none-any.whl[history-v2]"
 ```
 
 也可以从源码开发安装：

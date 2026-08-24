@@ -105,7 +105,7 @@ def encode_columnar_block(
                 f"<{len(rows)}f", *(float(row[column_index]) for row in rows)
             )
         )
-    raw.extend(struct.pack(f"<{len(rows)}Q", *(int(row[5]) for row in rows)))
+    raw.extend(struct.pack(f"<{len(rows)}q", *(int(row[5]) for row in rows)))
     _validate_block_size(len(raw), max_block_bytes)
     compressed = compress_zstd(bytes(raw)) if zstd_available() else b""
     if compressed:
@@ -170,7 +170,7 @@ def decode_columnar_block(
     for _ in range(4):
         columns.append(struct.unpack_from(f"<{expected_rows}f", view, offset))
         offset += float_bytes
-    volumes = struct.unpack_from(f"<{expected_rows}Q", view, offset)
+    volumes = struct.unpack_from(f"<{expected_rows}q", view, offset)
     offset += expected_rows * 8
 
     if header.column_flags & protocol.COLUMN_TURNOVER:

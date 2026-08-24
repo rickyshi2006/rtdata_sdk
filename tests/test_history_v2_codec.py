@@ -41,6 +41,17 @@ class HistoryV2CodecTest(unittest.TestCase):
                 )
             self.assertEqual(actual[6:], (0.0, 0))
 
+    def test_signed_volume_roundtrip_preserves_negative_reversal_bars(self):
+        rows = [
+            (1700000000000, 1.25, 1.50, 1.00, 1.40, -4100),
+            (1700000060000, 1.40, 1.60, 1.30, 1.55, 15000),
+        ]
+        encoded = codec.encode_columnar_block(rows)
+        decoded = codec.decode_columnar_block(
+            encoded.uncompressed, expected_rows=len(rows)
+        )
+        self.assertEqual([row[5] for row in decoded], [-4100, 15000])
+
     def test_rejects_order_row_count_and_trailing_data(self):
         with self.assertRaisesRegex(ValueError, "increasing"):
             codec.encode_columnar_block([self.rows[1], self.rows[0]])
