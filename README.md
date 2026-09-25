@@ -60,7 +60,7 @@ import rtdata
 
 with rtdata.API(
     token="your_token",
-    api_url="https://api.fengv2ray.tk",
+    api_url="https://api.vrrv.ccwu.cc",
 ) as api:
     @api.on_quote
     def on_quote(q):
@@ -79,13 +79,13 @@ from rtdata import RtdataClient
 
 with RtdataClient(
     token="your_token",
-    api_url="https://api.fengv2ray.tk",
+    api_url="https://api.vrrv.ccwu.cc",
 ) as client:
     print(client.current_endpoint)
 ```
 
 如果拿到的是卡号或 UUID，可先在 token 兑换页兑换 token：
-`https://rtdata.fengv2ray.tk`。
+`https://rtdata.vrrv.ccwu.cc`。
 
 ## 连接、自动重连与自动归位
 
@@ -95,7 +95,7 @@ with RtdataClient(
 ```python
 api = rtdata.API(
     token="your_token",
-    api_url="https://api.fengv2ray.tk",
+    api_url="https://api.vrrv.ccwu.cc",
     session_rehome_advertise=True,  # v0.3.1 起为默认值
 )
 ```
@@ -179,7 +179,7 @@ History V2 需要客户端安装 `zstandard`，并在连接时显式开启能力
 ```python
 with rtdata.API(
     token="your_token",
-    api_url="https://api.fengv2ray.tk",
+    api_url="https://api.vrrv.ccwu.cc",
     history_v2_advertise=True,
     history_v2_default=True,
     history_cache_enabled=False,
@@ -209,7 +209,7 @@ with rtdata.API(
 ```python
 api = rtdata.API(
     token="your_token",
-    api_url="https://api.fengv2ray.tk",
+    api_url="https://api.vrrv.ccwu.cc",
     history_cache_enabled=False,
 )
 ```
@@ -231,7 +231,7 @@ api = rtdata.API(
 普通财务报表和 PIT 的默认值都是 `query_type=4`：
 
 ```python
-with rtdata.API(token="your_token", api_url="https://api.fengv2ray.tk") as api:
+with rtdata.API(token="your_token", api_url="https://api.vrrv.ccwu.cc") as api:
     a_data = api.get_finance("600519.SH", report_period="2025-12-31")
     hk_data = api.get_finance("00700.HK", report_period="2025-12-31")
     us_data = api.get_finance("AAPL.US", report_period="2025-12-31")

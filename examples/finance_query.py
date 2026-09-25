@@ -11,7 +11,7 @@ from rtdata import FinanceData, QueryError
 
 
 TOKEN = "your_token"
-API_URL = "https://api.fengv2ray.tk"
+API_URL = "https://api.vrrv.ccwu.cc"
 REPORT_PERIOD = "2025-12-31"
 PIT_DATE = "2025-12-31"
 

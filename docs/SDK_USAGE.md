@@ -60,7 +60,7 @@ import rtdata
 
 api = rtdata.API(
     token="your_token",
-    api_url="https://api.fengv2ray.tk",
+    api_url="https://api.vrrv.ccwu.cc",
 )
 ```
 
@@ -79,7 +79,7 @@ from rtdata import RtdataClient
 
 client = RtdataClient(
     token="your_token",
-    api_url="https://api.fengv2ray.tk",
+    api_url="https://api.vrrv.ccwu.cc",
 )
 client.connect()
 ```
@@ -93,7 +93,7 @@ client.connect()
 ```python
 client = RtdataClient(
     token="your_token",
-    api_url="https://api.fengv2ray.tk",
+    api_url="https://api.vrrv.ccwu.cc",
 )
 client.connect()
 ```
@@ -136,7 +136,7 @@ client.connect()
 ```python
 API(
     token: str,
-    api_url: str = "https://api.fengv2ray.tk",
+    api_url: str = "https://api.vrrv.ccwu.cc",
     *,
     async_callbacks: bool = True,
     callback_queue_size: int = 1000,
@@ -359,7 +359,7 @@ klines = api.get_kline(
 ```python
 api = rtdata.API(
     token="your_token",
-    api_url="https://api.fengv2ray.tk",
+    api_url="https://api.vrrv.ccwu.cc",
     history_cache_enabled=False,
 )
 ```
@@ -369,7 +369,7 @@ api = rtdata.API(
 ```python
 api = rtdata.API(
     token="your_token",
-    api_url="https://api.fengv2ray.tk",
+    api_url="https://api.vrrv.ccwu.cc",
     history_cache_dir="/data/rtdata_cache",
 )
 ```
@@ -382,7 +382,7 @@ History V2 是可选的列式压缩历史流。客户端需要安装 `history-v2
 ```python
 with rtdata.API(
     token="your_token",
-    api_url="https://api.fengv2ray.tk",
+    api_url="https://api.vrrv.ccwu.cc",
     history_v2_advertise=True,
     history_v2_default=True,
     history_cache_enabled=False,
@@ -500,7 +500,7 @@ SDK 默认允许会话从异常节点迁移到健康节点，并在首选节点�
 ```python
 api = API(
     token="your_token",
-    api_url="https://api.fengv2ray.tk",
+    api_url="https://api.vrrv.ccwu.cc",
 )
 ```
 
@@ -580,7 +580,7 @@ print(api.last_subscribe_rejected)
 ```python
 api = rtdata.API(
     token="your_token",
-    api_url="https://api.fengv2ray.tk",
+    api_url="https://api.vrrv.ccwu.cc",
     history_cache_enabled=False,
 )
 ```
@@ -590,7 +590,7 @@ api = rtdata.API(
 ```python
 import rtdata
 
-with rtdata.API(token="your_token", api_url="https://api.fengv2ray.tk") as api:
+with rtdata.API(token="your_token", api_url="https://api.vrrv.ccwu.cc") as api:
     rows = api.get_kline("000001.SZ", period="1d", start="2015-01-01", end="2015-12-31")
 ```
 
@@ -599,7 +599,7 @@ with rtdata.API(token="your_token", api_url="https://api.fengv2ray.tk") as api:
 ```python
 from rtdata import RtdataClient
 
-with RtdataClient(token="your_token", api_url="https://api.fengv2ray.tk") as client:
+with RtdataClient(token="your_token", api_url="https://api.vrrv.ccwu.cc") as client:
     print(client.current_endpoint)
 ```
 

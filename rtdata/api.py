@@ -29,7 +29,7 @@ from .exceptions import ConnectionError
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_API_URL = "https://api.fengv2ray.tk"
+DEFAULT_API_URL = "https://api.vrrv.ccwu.cc"
 
 
 class API:

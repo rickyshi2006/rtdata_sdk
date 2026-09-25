@@ -12,7 +12,7 @@ import rtdata
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s [%(levelname)s] %(message)s")
 
-api = rtdata.API(token="your_token", api_url="https://api.fengv2ray.tk")
+api = rtdata.API(token="your_token", api_url="https://api.vrrv.ccwu.cc")
 
 print("提示：查询是可靠请求-响应语义；若连接中断，当前查询会快速失败，调用方应自行重试。")
 

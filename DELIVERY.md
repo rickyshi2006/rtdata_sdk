@@ -52,7 +52,7 @@ import rtdata
 
 api = rtdata.API(
     token="your_token",
-    api_url="https://api.fengv2ray.tk",
+    api_url="https://api.vrrv.ccwu.cc",
 )
 ```
 
@@ -101,7 +101,7 @@ rows = api.get_kline(
 ```python
 api = rtdata.API(
     token="your_token",
-    api_url="https://api.fengv2ray.tk",
+    api_url="https://api.vrrv.ccwu.cc",
     history_cache_enabled=False,
 )
 ```
@@ -181,7 +181,7 @@ import rtdata
 
 api = rtdata.API(
     token="your_token",
-    api_url="https://api.fengv2ray.tk",
+    api_url="https://api.vrrv.ccwu.cc",
 )
 
 @api.on_quote

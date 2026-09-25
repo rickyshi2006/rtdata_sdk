@@ -7,7 +7,7 @@ import time
 import rtdata
 from rtdata import Quote
 
-api = rtdata.API(token="your_token", api_url="https://api.fengv2ray.tk")
+api = rtdata.API(token="your_token", api_url="https://api.vrrv.ccwu.cc")
 
 
 @api.on_quote

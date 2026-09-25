@@ -13,7 +13,7 @@ SYMBOLS = [
     "rb2605.SHF",
 ]
 
-api = rtdata.API(token="your_token", api_url="https://api.fengv2ray.tk")
+api = rtdata.API(token="your_token", api_url="https://api.vrrv.ccwu.cc")
 
 @api.on_quote
 def on_quote(q: Quote):

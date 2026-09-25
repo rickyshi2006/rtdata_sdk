@@ -17,7 +17,7 @@ from rtdata import Quote
 
 
 TOKEN = "your_token"
-API_URL = "https://api.fengv2ray.tk"
+API_URL = "https://api.vrrv.ccwu.cc"
 SYMBOLS = ["601919.SH"]
 SYNC_CALLBACKS = False
 CALLBACK_QUEUE_SIZE = 1000

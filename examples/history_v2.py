@@ -8,7 +8,7 @@ import rtdata
 
 
 TOKEN = "your_token"
-API_URL = "https://api.fengv2ray.tk"
+API_URL = "https://api.vrrv.ccwu.cc"
 SYMBOL = "000001.SZ"
 PERIOD = "1d"
 START = "2025-06-02"

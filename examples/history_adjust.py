@@ -9,7 +9,7 @@ import rtdata
 
 
 TOKEN = "your_token"
-API_URL = "https://api.fengv2ray.tk"
+API_URL = "https://api.vrrv.ccwu.cc"
 
 CASES = (
     ("A 股", "000001.SZ", "2025-06-09", "2025-06-16"),

@@ -23,7 +23,7 @@ SYMBOLS = [
 ]
 
 # 推荐使用 API + 服务发现
-api = rtdata.API(token="your_token", api_url="https://api.fengv2ray.tk")
+api = rtdata.API(token="your_token", api_url="https://api.vrrv.ccwu.cc")
 
 @api.on_quote
 def on_quote(q: Quote):

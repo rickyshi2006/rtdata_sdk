@@ -12,7 +12,7 @@ from rtdata import TokenStatus
 
 
 TOKEN = "your_token"
-API_URL = "https://api.fengv2ray.tk"
+API_URL = "https://api.vrrv.ccwu.cc"
 LISTEN_SECONDS = 300.0  # 设为 0 表示持续监听
 
 
