@@ -14,7 +14,7 @@
 - History V2 能力协商、列式压缩和 V1 自动回退
 - 安全 session rehome（故障转移后回到账号首选节点）
 
-当前版本：`0.3.2`
+当前版本：`0.3.4`
 
 ## 1.1 当前支持范围
 
@@ -38,13 +38,13 @@ pip install -e .
 ### 2.2 安装 wheel
 
 ```bash
-pip install rtdata-0.3.2-py3-none-any.whl
+pip install rtdata-0.3.4-py3-none-any.whl
 ```
 
 需要 History V2 高速历史流时，安装可选的 Zstandard 依赖：
 
 ```bash
-pip install "rtdata-0.3.2-py3-none-any.whl[history-v2]"
+pip install "rtdata-0.3.4-py3-none-any.whl[history-v2]"
 ```
 
 未安装该可选依赖时，SDK 自动使用兼容的 History V1。

@@ -3,21 +3,18 @@
 ## 当前包信息
 
 - 包名：`rtdata`
-- 当前版本：`0.3.2`
+- 当前版本：`0.3.4`
 
-本次提升版本号，产物更新为 `0.3.2`。
+本次提升版本号，产物更新为 `0.3.4`。
 
-## v0.3.2 变更摘要
+## v0.3.4 变更摘要
 
-- `API.get_finance_pit()` 和 `RtdataClient.get_finance_pit()` 默认使用
-  `query_type=4`，与网关的 `1/2/3/4` PIT 协议一致。
-- 文档覆盖 History V2、可选 Zstandard、自动 session rehome、Token 状态、A/HK/US
-  历史复权和三市场财务字段差异。
-- 新增/更新 `examples/finance_query.py`、`history_adjust.py`、`history_v2.py` 和
-  `session_rehome.py`。
+- 默认服务发现 API 地址迁移为 `https://api.vrrv.ccwu.cc`。
+- 公开下载和 token 兑换地址迁移为 `https://rtdata.vrrv.ccwu.cc`。
+- 同步更新 README、使用文档和示例中的连接域名。
 
-本次仅生成候选代码和构建产物；尚未创建正式 `v0.3.2` tag、GitHub Release，也未修改
-正式网关或客户端部署。
+发布时必须创建匹配的 `v0.3.4` tag；GitHub Release 和构建产物由 release workflow
+生成，发布后的包文件不做原地替换。
 
 ## 当前支持范围
 
@@ -36,8 +33,8 @@
 
 文件：
 
-- `rtdata-0.3.2-py3-none-any.whl`
-- `rtdata-0.3.2.tar.gz`
+- `rtdata-0.3.4-py3-none-any.whl`
+- `rtdata-0.3.4.tar.gz`
 
 优先建议对外提供 `.whl`。
 
@@ -138,25 +135,25 @@ print(api.last_subscribe_rejected)
 ### 安装 wheel
 
 ```bash
-pip install rtdata-0.3.2-py3-none-any.whl
+pip install rtdata-0.3.4-py3-none-any.whl
 ```
 
 推荐安装 History V2 高速历史流依赖：
 
 ```bash
-pip install "rtdata-0.3.2-py3-none-any.whl[history-v2]"
+pip install "rtdata-0.3.4-py3-none-any.whl[history-v2]"
 ```
 
 ### 安装源码包
 
 ```bash
-pip install rtdata-0.3.2.tar.gz
+pip install rtdata-0.3.4.tar.gz
 ```
 
 ### 升级安装
 
 ```bash
-pip install --upgrade "rtdata-0.3.2-py3-none-any.whl[history-v2]"
+pip install --upgrade "rtdata-0.3.4-py3-none-any.whl[history-v2]"
 ```
 
 ## 建议同时交付给客户的内容

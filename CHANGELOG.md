@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.4 - 2026-09-26
+
+- 将默认服务发现 API 地址迁移为 `https://api.vrrv.ccwu.cc`。
+- 将公开下载和 token 兑换地址迁移为 `https://rtdata.vrrv.ccwu.cc`。
+- 同步更新 README、使用文档、交付说明和示例中的连接域名。
+
+## 0.3.3 - 2026-08-24
+
+- 修正 History V2 列式块中 `volume` 的编解码格式，改用有符号 `int64`，保留反转
+  行情中的负数 volume。
+- 增加负数 volume 的 History V2 编解码回归测试。
+
 ## 0.3.2 - 2026-08-23
 
 - 修正财务请求（包括 `API.get_finance_pit()` 和 `RtdataClient.get_finance_pit()`）的默认
