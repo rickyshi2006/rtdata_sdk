@@ -1,5 +1,5 @@
 请使用以下卡号（UUID）到下列地址兑换 token：
-https://rtdata.fengv2ray.tk
+https://rtdata.vrrv.ccwu.cc/
 
 1. CARD-20260826-A10CF28B
 2. CARD-20260826-24D97848
