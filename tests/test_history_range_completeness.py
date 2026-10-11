@@ -21,6 +21,28 @@ def make_kline(timestamp: int) -> Kline:
 
 
 class HistoryRangeCompletenessTest(unittest.TestCase):
+    def test_inclusive_end_survives_half_open_upstream_and_cache(self):
+        for cache in (False, True):
+            for end in (100, 104):
+                with self.subTest(cache=cache, end=end), tempfile.TemporaryDirectory() as directory:
+                    client = RtdataClient(token='test', symbol_cache_dir=directory,
+                                          history_cache_dir=directory, history_cache_enabled=cache)
+                    calls = []
+
+                    def fetch(_symbol, _period, start_ms, end_ms, max_count, _timeout, adjust='none'):
+                        calls.append((start_ms, end_ms))
+                        return [make_kline(t) for t in range(99, 106)
+                                if start_ms <= t < end_ms][:max_count]
+
+                    client._perform_history_query = fetch
+                    with mock.patch('rtdata.client.HISTORY_V1_PAGE_ROWS', 2):
+                        rows = client.get_kline('TEST.US', '1m', start=100, end=end)
+                        self.assertEqual([row.timestamp for row in rows], list(range(100, end + 1)))
+                        self.assertTrue(all(bound == end + 1 for _, bound in calls))
+                        if cache:
+                            client._perform_history_query = mock.Mock(side_effect=AssertionError('cache miss'))
+                            self.assertEqual(client.get_kline('TEST.US', '1m', start=100, end=end), rows)
+
     def test_range_without_cache_pages_until_server_returns_empty(self):
         client = RtdataClient(
             token="test",

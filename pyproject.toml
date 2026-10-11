@@ -7,6 +7,7 @@ requires-python = ">=3.9"
 
 [project.optional-dependencies]
 history-v2 = ["zstandard>=0.23,<1"]
+market-time = ["tzdata>=2025.2"]
 
 [build-system]
 requires = ["setuptools>=64"]

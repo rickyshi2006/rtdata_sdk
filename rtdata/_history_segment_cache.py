@@ -80,7 +80,8 @@ class HistorySegmentCache:
         self._enabled = enabled
         self._tail_refresh_bars = max(0, int(tail_refresh_bars))
         base_dir = Path(cache_dir) if cache_dir else Path.home() / ".rtdata"
-        self._root_dir = base_dir / "history_v1"
+        # Legacy US rows may have a fixed-offset timestamp; do not mix clocks.
+        self._root_dir = base_dir / "history_utc_v1"
         self._series_locks: Dict[str, threading.Lock] = {}
         self._locks_guard = threading.Lock()
         if enabled:

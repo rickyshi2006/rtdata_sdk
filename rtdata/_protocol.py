@@ -299,6 +299,8 @@ def encode_history_request(request_id: int, symbol_id: int, period_str: str,
                            history_v2_options: bytes = b'') -> bytes:
     """构建 HISTORY_REQUEST 完整消息
 
+    start_time/end_time are UTC epoch milliseconds; the range is [start, end).
+
     payload 格式 (29 + 2 + code_len [+ adjust]):
       request_id(4) + symbol_id(4) + period(1)
       + start_time(8) + end_time(8) + max_count(4)

@@ -19,7 +19,7 @@ import logging
 import queue
 import struct
 from collections import deque
-from datetime import datetime, date, time as dt_time
+from datetime import datetime, date
 from typing import Callable, Optional, List, Dict, Iterator, Tuple, Union
 
 from . import _protocol as proto
@@ -31,6 +31,7 @@ from ._history_capability_runtime import HistoryCapabilityRuntime
 from ._session_capability_runtime import SessionCapabilityRuntime
 from . import _session_rehome_protocol as session_rehome
 from ._history_segment_cache import HistorySegmentCache
+from ._history_time import normalize_endpoint, market_zone, exclusive_end
 from ._history_v2_stream import HistoryV2RequestState
 from ._symbol_map import SymbolMap
 from .models import Quote, Kline, FinanceData, TokenStatus
@@ -516,33 +517,9 @@ class RtdataClient(RealtimeClientMixin):
         else:
             logger.info(f"Subscribe confirmed: {codes}")
 
-    def _normalize_history_endpoint(self, value: Union[int, float, str, datetime, date], *, is_end: bool) -> int:
-        if isinstance(value, (int, float)):
-            return int(value)
-        if isinstance(value, datetime):
-            return int(value.timestamp() * 1000)
-        if isinstance(value, date):
-            if is_end:
-                dt = datetime.combine(value, dt_time(23, 59, 59, 999000))
-            else:
-                dt = datetime.combine(value, dt_time.min)
-            return int(dt.timestamp() * 1000)
-        if isinstance(value, str):
-            text = value.strip()
-            if not text:
-                return 0
-            if len(text) == 10 and text.count('-') == 2:
-                parsed = datetime.strptime(text, '%Y-%m-%d').date()
-                return self._normalize_history_endpoint(parsed, is_end=is_end)
-            text = text.replace('T', ' ')
-            for fmt in ('%Y-%m-%d %H:%M:%S.%f', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M'):
-                try:
-                    dt = datetime.strptime(text, fmt)
-                    return int(dt.timestamp() * 1000)
-                except ValueError:
-                    continue
-            raise ValueError(f'Unsupported datetime format: {value}')
-        raise TypeError(f'Unsupported history time value: {value!r}')
+    def _normalize_history_endpoint(self, value: Union[int, float, str, datetime, date], *,
+                                    symbol: str, is_end: bool) -> int:
+        return normalize_endpoint(value, symbol=symbol, is_end=is_end)
 
     def _select_history_v2_request(self):
         snapshot = self._history_capability.snapshot()
@@ -964,7 +941,7 @@ class RtdataClient(RealtimeClientMixin):
                 symbol,
                 period,
                 cursor,
-                end_exclusive_ms - 1,
+                end_exclusive_ms,
                 HISTORY_V1_PAGE_ROWS,
                 remaining,
                 adjust=adjust,
@@ -1003,25 +980,26 @@ class RtdataClient(RealtimeClientMixin):
         if adjust not in VALID_ADJUSTS:
             raise ValueError(f'Unsupported adjust value: {adjust}')
 
-        start_ms = self._normalize_history_endpoint(start, is_end=False) if start else 0
-        end_ms = self._normalize_history_endpoint(end, is_end=True) if end else 0
+        start_ms = self._normalize_history_endpoint(start, symbol=symbol, is_end=False) if start else 0
+        end_ms = self._normalize_history_endpoint(end, symbol=symbol, is_end=True) if end else 0
         if start_ms and end_ms and start_ms > end_ms:
             raise ValueError('start must be <= end')
+        end_exclusive_ms = exclusive_end(end_ms) if end_ms else 0
 
         if start_ms and end_ms and self._history_cache.enabled:
             return self._get_history_with_local_cache(
-                symbol, period, adjust, start_ms, end_ms + 1, timeout)
+                symbol, period, adjust, start_ms, end_exclusive_ms, timeout)
 
         if start_ms and end_ms:
             klines: List[Kline] = []
             deadline = time.monotonic() + timeout
             for _coverage_start, _coverage_end, fetched in self._iter_history_range_pages(
-                    symbol, period, adjust, start_ms, end_ms + 1, deadline):
+                    symbol, period, adjust, start_ms, end_exclusive_ms, deadline):
                 klines.extend(fetched)
             return klines
 
         return self._perform_history_query(
-            symbol, period, start_ms, end_ms,
+            symbol, period, start_ms, end_exclusive_ms,
             HISTORY_V1_PAGE_ROWS, timeout, adjust=adjust)
 
     def get_kline_range(self, symbol: str, period: str = '1d',
@@ -1038,7 +1016,8 @@ class RtdataClient(RealtimeClientMixin):
 
     def get_kline_for_today(self, symbol: str, period: str = '1d', timeout: float = 30.0,
                             adjust: str = 'none') -> List[Kline]:
-        return self.get_kline(symbol, period=period, start=date.today(), end=date.today(),
+        today = datetime.now(market_zone(symbol)).date()
+        return self.get_kline(symbol, period=period, start=today, end=today,
                               timeout=timeout, adjust=adjust)
 
     def get_finance(self, stock_code: str, report_period: str = '',
