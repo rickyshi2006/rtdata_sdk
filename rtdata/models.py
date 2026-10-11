@@ -2,6 +2,7 @@
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Optional, List
+from types import MappingProxyType
 
 
 @dataclass(frozen=True)
@@ -38,28 +39,115 @@ class Quote:
     """实时行情快照"""
     symbol: str         # "SSE.601919"
     symbol_id: int
-    bid: float
-    ask: float
-    last: float
-    volume: int
+    bid: Optional[float]
+    ask: Optional[float]
+    last: Optional[float]
+    volume: Optional[int]
     timestamp: int      # 毫秒时间戳
 
     # 基础行情字段
-    high: float = 0.0
-    low: float = 0.0
-    open: float = 0.0
-    prev_close: float = 0.0
-    turnover: float = 0.0
+    high: Optional[float] = 0.0
+    low: Optional[float] = 0.0
+    open: Optional[float] = 0.0
+    prev_close: Optional[float] = 0.0
+    turnover: Optional[float] = 0.0
 
     # 五档行情（可选，如果服务端提供）
-    bid_prices: List[float] = field(default_factory=list)   # 买盘价格（5档）
-    bid_volumes: List[int] = field(default_factory=list)    # 买盘量（5档）
-    ask_prices: List[float] = field(default_factory=list)   # 卖盘价格（5档）
-    ask_volumes: List[int] = field(default_factory=list)    # 卖盘量（5档）
+    bid_prices: List[Optional[float]] = field(default_factory=list)   # 买盘价格（5档）
+    bid_volumes: List[Optional[int]] = field(default_factory=list)    # 买盘量（5档）
+    ask_prices: List[Optional[float]] = field(default_factory=list)   # 卖盘价格（5档）
+    ask_volumes: List[Optional[int]] = field(default_factory=list)    # 卖盘量（5档）
 
     def __str__(self):
-        return (f"Quote({self.symbol}: last={self.last:.4f}, "
-                f"bid={self.bid:.4f}, ask={self.ask:.4f}, vol={self.volume})")
+        price = lambda value: "None" if value is None else f"{value:.4f}"
+        return (f"Quote({self.symbol}: last={price(self.last)}, "
+                f"bid={price(self.bid)}, ask={price(self.ask)}, vol={self.volume})")
+
+    @property
+    def fields(self):
+        return MappingProxyType(dict(bid_price1=self.bid, ask_price1=self.ask,
+                                     last=self.last, volume=self.volume, trade_time=self.timestamp))
+
+    @property
+    def available_fields(self):
+        return frozenset(self.fields)
+
+    wire_version = 1
+    schema_version = None
+    schema_id = None
+    source_id = None
+    source_table = None
+    source_epoch = None
+    sequence = None
+
+    @classmethod
+    def from_snapshot(cls, snapshot, symbol_id: int, symbol: str):
+        return _FullQuote(snapshot, symbol_id, symbol)
+
+
+class _FullQuote(Quote):
+    """Immutable V2 Quote: raw fields and compatibility aliases share one value store."""
+
+    _aliases = {'bid': 'bid_price1', 'ask': 'ask_price1', 'timestamp': 'trade_time',
+                'prev_close': 'pre_close', 'turnover': 'amount'}
+    _books = {'bid_prices': 'bid_price', 'bid_volumes': 'bid_volume',
+              'ask_prices': 'ask_price', 'ask_volumes': 'ask_volume'}
+
+    def __init__(self, snapshot, symbol_id, symbol):
+        object.__setattr__(self, '_fields', snapshot.fields)
+        object.__setattr__(self, 'symbol', symbol)
+        object.__setattr__(self, 'symbol_id', symbol_id)
+        for name, value in dict(wire_version=2, schema_version=1, schema_id=snapshot.schema_id,
+                                source_id=snapshot.source_id, source_table=snapshot.source_table,
+                                source_epoch=snapshot.source_epoch, sequence=snapshot.sequence).items():
+            object.__setattr__(self, name, value)
+
+    def __getattribute__(self, name):
+        if not name.startswith('_'):
+            fields = object.__getattribute__(self, '_fields')
+            raw = _FullQuote._aliases.get(name, name)
+            if raw in fields:
+                return fields[raw]
+            if name in _FullQuote._books:
+                prefix = _FullQuote._books[name]
+                return [fields[prefix + str(i)] for i in range(1, 6) if prefix + str(i) in fields]
+        return object.__getattribute__(self, name)
+
+    @property
+    def fields(self):
+        return self._fields
+
+    def __setattr__(self, name, value):
+        raise AttributeError('V2 Quote is immutable')
+
+    def __delattr__(self, name):
+        raise AttributeError('V2 Quote is immutable')
+
+    def __eq__(self, other):
+        if not isinstance(other, _FullQuote):
+            return NotImplemented
+        return (self.symbol_id, self.source_id, self.source_epoch, self.sequence, self.fields) == (
+            other.symbol_id, other.source_id, other.source_epoch, other.sequence, other.fields)
+
+
+@dataclass(frozen=True)
+class RealtimeTableStatus:
+    source_table: str
+    schema_id: int
+    ready: bool
+    reason: str
+    epoch: int
+
+
+@dataclass(frozen=True)
+class RealtimeStatus:
+    mode: str
+    phase: str
+    negotiated: bool
+    reason: str
+    generation: int
+    revision: int
+    tables: object
 
 
 @dataclass

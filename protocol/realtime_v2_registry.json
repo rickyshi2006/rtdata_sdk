@@ -1,0 +1,448 @@
+{
+  "contract": "ddb-realtime-v2-row",
+  "version": 1,
+  "envelope_bytes": 32,
+  "max_payload_bytes": 16384,
+  "max_string_bytes": 1024,
+  "message_types": {
+    "offer": 96,
+    "ack": 97,
+    "commit": 98,
+    "snapshot": 99
+  },
+  "sources": [
+    {
+      "id": 1,
+      "table": "stocksnapshotStream",
+      "schema_id": 1
+    },
+    {
+      "id": 2,
+      "table": "hk_stock_snapshot",
+      "schema_id": 1
+    },
+    {
+      "id": 3,
+      "table": "futuresnapshotStream",
+      "schema_id": 2
+    },
+    {
+      "id": 4,
+      "table": "us_stock_snapshot",
+      "schema_id": 1
+    },
+    {
+      "id": 5,
+      "table": "forex_snapshot",
+      "schema_id": 3
+    }
+  ],
+  "schemas": [
+    {
+      "id": 1,
+      "version": 1,
+      "fields": [
+        {
+          "name": "code",
+          "type": "SYMBOL"
+        },
+        {
+          "name": "trade_time",
+          "type": "TIMESTAMP"
+        },
+        {
+          "name": "pre_close",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "last",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "open",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "high",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "low",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "close",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "volume",
+          "type": "LONG"
+        },
+        {
+          "name": "amount",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "num_trades",
+          "type": "LONG"
+        },
+        {
+          "name": "high_limited",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "low_limited",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "ask_price1",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "ask_volume1",
+          "type": "INT"
+        },
+        {
+          "name": "ask_price2",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "ask_volume2",
+          "type": "INT"
+        },
+        {
+          "name": "ask_price3",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "ask_volume3",
+          "type": "INT"
+        },
+        {
+          "name": "ask_price4",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "ask_volume4",
+          "type": "INT"
+        },
+        {
+          "name": "ask_price5",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "ask_volume5",
+          "type": "INT"
+        },
+        {
+          "name": "bid_price1",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "bid_volume1",
+          "type": "INT"
+        },
+        {
+          "name": "bid_price2",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "bid_volume2",
+          "type": "INT"
+        },
+        {
+          "name": "bid_price3",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "bid_volume3",
+          "type": "INT"
+        },
+        {
+          "name": "bid_price4",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "bid_volume4",
+          "type": "INT"
+        },
+        {
+          "name": "bid_price5",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "bid_volume5",
+          "type": "INT"
+        },
+        {
+          "name": "iopv",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "trading_phase_code",
+          "type": "SYMBOL"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "version": 1,
+      "fields": [
+        {
+          "name": "code",
+          "type": "SYMBOL"
+        },
+        {
+          "name": "trade_time",
+          "type": "TIMESTAMP"
+        },
+        {
+          "name": "pre_close",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "last",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "open",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "high",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "low",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "close",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "volume",
+          "type": "LONG"
+        },
+        {
+          "name": "amount",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "open_interest",
+          "type": "LONG"
+        },
+        {
+          "name": "high_limited",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "low_limited",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "ask_price1",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "ask_volume1",
+          "type": "INT"
+        },
+        {
+          "name": "ask_price2",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "ask_volume2",
+          "type": "INT"
+        },
+        {
+          "name": "ask_price3",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "ask_volume3",
+          "type": "INT"
+        },
+        {
+          "name": "ask_price4",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "ask_volume4",
+          "type": "INT"
+        },
+        {
+          "name": "ask_price5",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "ask_volume5",
+          "type": "INT"
+        },
+        {
+          "name": "bid_price1",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "bid_volume1",
+          "type": "INT"
+        },
+        {
+          "name": "bid_price2",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "bid_volume2",
+          "type": "INT"
+        },
+        {
+          "name": "bid_price3",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "bid_volume3",
+          "type": "INT"
+        },
+        {
+          "name": "bid_price4",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "bid_volume4",
+          "type": "INT"
+        },
+        {
+          "name": "bid_price5",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "bid_volume5",
+          "type": "INT"
+        },
+        {
+          "name": "settlement_price",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "average_price",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "pre_open_interest",
+          "type": "LONG"
+        },
+        {
+          "name": "pre_settlement",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "trading_status",
+          "type": "CHAR"
+        },
+        {
+          "name": "ins_class",
+          "type": "SYMBOL"
+        },
+        {
+          "name": "delivery_year",
+          "type": "INT"
+        },
+        {
+          "name": "delivery_month",
+          "type": "INT"
+        },
+        {
+          "name": "expire_date",
+          "type": "STRING"
+        },
+        {
+          "name": "price_tick",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "volume_multiple",
+          "type": "INT"
+        },
+        {
+          "name": "strike_price",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "underlying_symbol",
+          "type": "SYMBOL"
+        },
+        {
+          "name": "option_class",
+          "type": "CHAR"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "version": 1,
+      "fields": [
+        {
+          "name": "code",
+          "type": "SYMBOL"
+        },
+        {
+          "name": "trade_time",
+          "type": "TIMESTAMP"
+        },
+        {
+          "name": "pre_close",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "last",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "open",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "high",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "low",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "close",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "volume",
+          "type": "LONG"
+        },
+        {
+          "name": "amount",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "num_trades",
+          "type": "INT"
+        },
+        {
+          "name": "bid_price1",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "bid_volume1",
+          "type": "INT"
+        },
+        {
+          "name": "ask_price1",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "ask_volume1",
+          "type": "INT"
+        }
+      ]
+    }
+  ]
+}
