@@ -19,22 +19,26 @@ import logging
 import queue
 import struct
 from collections import deque
-from datetime import datetime, date, time as dt_time
+from datetime import datetime, date
 from typing import Callable, Optional, List, Dict, Iterator, Tuple, Union
 
 from . import _protocol as proto
 from . import _history_v2_protocol as history_v2
 from ._connection import Connection
+from ._realtime_client import RealtimeClientMixin
+from . import _realtime_capability as realtime_cap
 from ._history_capability_runtime import HistoryCapabilityRuntime
 from ._session_capability_runtime import SessionCapabilityRuntime
 from . import _session_rehome_protocol as session_rehome
 from ._history_segment_cache import HistorySegmentCache
+from ._history_time import normalize_endpoint, market_zone, exclusive_end
 from ._history_v2_stream import HistoryV2RequestState
 from ._symbol_map import SymbolMap
 from .models import Quote, Kline, FinanceData, TokenStatus
 from .exceptions import (
     AuthenticationError, ConnectionError, SymbolNotFoundError,
     QueryTimeoutError, QueryError, DiscoveryError, DisconnectedError,
+    RealtimeUnavailableError,
 )
 
 logger = logging.getLogger(__name__)
@@ -81,7 +85,7 @@ class _HistoryV2DecodeQueue:
             return item
 
 
-class RtdataClient:
+class RtdataClient(RealtimeClientMixin):
 
     def __init__(
         self,
@@ -103,6 +107,7 @@ class RtdataClient:
         history_capability_ack_timeout: float = 1.0,
         session_rehome_advertise: bool = True,
         session_capability_ack_timeout: float = 1.0,
+        realtime_protocol: str = 'legacy',
     ):
         self._token = token
         self._host = host
@@ -169,6 +174,7 @@ class RtdataClient:
 
         self._quote_cache: Dict[str, Quote] = {}
         self._quote_cache_lock = threading.Lock()
+        self._init_realtime(realtime_protocol)
 
         self._next_request_id = 1
         self._request_id_lock = threading.Lock()
@@ -235,6 +241,9 @@ class RtdataClient:
         return decorator
 
     def connect(self, timeout: float = 15.0):
+        self._reset_realtime('new_connection')
+        self._authenticated = False
+        self._auth_success = False
         if self._conn is not None:
             self._abort_pending_queries(
                 "connection replaced",
@@ -262,6 +271,8 @@ class RtdataClient:
             heartbeat_interval=self._heartbeat_interval,
             auto_reconnect=self._auto_reconnect,
         )
+        connection = self._conn
+        connection._on_disconnected = lambda reason: self._handle_connection_disconnected(connection, reason)
         self._conn._on_reconnected = self._handle_reconnected
         self._conn._on_before_reconnect = self._before_reconnect
         self._conn._on_reconnect_completed = self._handle_reconnect_completed
@@ -305,6 +316,12 @@ class RtdataClient:
             raise ConnectionError("Connection lost during initial state restore")
 
         self._authenticated = True
+        if self._realtime.mode == 'required_v2':
+            try:
+                self.wait_for_realtime()
+            except RealtimeUnavailableError:
+                self.close()
+                raise
         logger.info(
             "Ready. Symbols: %s node_id=%s",
             self._symbol_map.size,
@@ -373,6 +390,8 @@ class RtdataClient:
 
     def close(self):
         self._authenticated = False
+        self._auth_success = False
+        self._reset_realtime('closed')
         self._abort_pending_queries(
             "client closed",
             cancel_reason=history_v2.CancelReason.SHUTDOWN,
@@ -381,7 +400,8 @@ class RtdataClient:
         self._history_capability.reset("closed")
         self._session_capability.reset("closed")
         self._callback_stop.set()
-        if self._callback_thread and self._callback_thread.is_alive():
+        if (self._callback_thread and self._callback_thread.is_alive()
+                and self._callback_thread is not threading.current_thread()):
             self._callback_thread.join(timeout=3)
         if self._conn:
             self._conn.close()
@@ -497,33 +517,9 @@ class RtdataClient:
         else:
             logger.info(f"Subscribe confirmed: {codes}")
 
-    def _normalize_history_endpoint(self, value: Union[int, float, str, datetime, date], *, is_end: bool) -> int:
-        if isinstance(value, (int, float)):
-            return int(value)
-        if isinstance(value, datetime):
-            return int(value.timestamp() * 1000)
-        if isinstance(value, date):
-            if is_end:
-                dt = datetime.combine(value, dt_time(23, 59, 59, 999000))
-            else:
-                dt = datetime.combine(value, dt_time.min)
-            return int(dt.timestamp() * 1000)
-        if isinstance(value, str):
-            text = value.strip()
-            if not text:
-                return 0
-            if len(text) == 10 and text.count('-') == 2:
-                parsed = datetime.strptime(text, '%Y-%m-%d').date()
-                return self._normalize_history_endpoint(parsed, is_end=is_end)
-            text = text.replace('T', ' ')
-            for fmt in ('%Y-%m-%d %H:%M:%S.%f', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M'):
-                try:
-                    dt = datetime.strptime(text, fmt)
-                    return int(dt.timestamp() * 1000)
-                except ValueError:
-                    continue
-            raise ValueError(f'Unsupported datetime format: {value}')
-        raise TypeError(f'Unsupported history time value: {value!r}')
+    def _normalize_history_endpoint(self, value: Union[int, float, str, datetime, date], *,
+                                    symbol: str, is_end: bool) -> int:
+        return normalize_endpoint(value, symbol=symbol, is_end=is_end)
 
     def _select_history_v2_request(self):
         snapshot = self._history_capability.snapshot()
@@ -945,7 +941,7 @@ class RtdataClient:
                 symbol,
                 period,
                 cursor,
-                end_exclusive_ms - 1,
+                end_exclusive_ms,
                 HISTORY_V1_PAGE_ROWS,
                 remaining,
                 adjust=adjust,
@@ -984,25 +980,26 @@ class RtdataClient:
         if adjust not in VALID_ADJUSTS:
             raise ValueError(f'Unsupported adjust value: {adjust}')
 
-        start_ms = self._normalize_history_endpoint(start, is_end=False) if start else 0
-        end_ms = self._normalize_history_endpoint(end, is_end=True) if end else 0
+        start_ms = self._normalize_history_endpoint(start, symbol=symbol, is_end=False) if start else 0
+        end_ms = self._normalize_history_endpoint(end, symbol=symbol, is_end=True) if end else 0
         if start_ms and end_ms and start_ms > end_ms:
             raise ValueError('start must be <= end')
+        end_exclusive_ms = exclusive_end(end_ms) if end_ms else 0
 
         if start_ms and end_ms and self._history_cache.enabled:
             return self._get_history_with_local_cache(
-                symbol, period, adjust, start_ms, end_ms + 1, timeout)
+                symbol, period, adjust, start_ms, end_exclusive_ms, timeout)
 
         if start_ms and end_ms:
             klines: List[Kline] = []
             deadline = time.monotonic() + timeout
             for _coverage_start, _coverage_end, fetched in self._iter_history_range_pages(
-                    symbol, period, adjust, start_ms, end_ms + 1, deadline):
+                    symbol, period, adjust, start_ms, end_exclusive_ms, deadline):
                 klines.extend(fetched)
             return klines
 
         return self._perform_history_query(
-            symbol, period, start_ms, end_ms,
+            symbol, period, start_ms, end_exclusive_ms,
             HISTORY_V1_PAGE_ROWS, timeout, adjust=adjust)
 
     def get_kline_range(self, symbol: str, period: str = '1d',
@@ -1019,7 +1016,8 @@ class RtdataClient:
 
     def get_kline_for_today(self, symbol: str, period: str = '1d', timeout: float = 30.0,
                             adjust: str = 'none') -> List[Kline]:
-        return self.get_kline(symbol, period=period, start=date.today(), end=date.today(),
+        today = datetime.now(market_zone(symbol)).date()
+        return self.get_kline(symbol, period=period, start=today, end=today,
                               timeout=timeout, adjust=adjust)
 
     def get_finance(self, stock_code: str, report_period: str = '',
@@ -1079,7 +1077,10 @@ class RtdataClient:
 
     def get_quote(self, symbol: str) -> Optional[Quote]:
         with self._quote_cache_lock:
-            return self._quote_cache.get(symbol)
+            quote = self._quote_cache.get(symbol)
+        if self._realtime.mode == 'required_v2' and (quote is None or quote.wire_version != 2):
+            raise RealtimeUnavailableError(f'full-field quote unavailable for {symbol}; inspect realtime_status.tables')
+        return quote
 
     def get_subscribed_symbols(self) -> List[str]:
         with self._subscribed_lock:
@@ -1119,6 +1120,10 @@ class RtdataClient:
 
         if msg_type == proto.MsgType.AUTH_RESPONSE:
             self._handle_auth_response(payload)
+        elif msg_type in (realtime_cap.ACK, realtime_cap.SOURCE_STATUS):
+            self._handle_realtime_control(msg_type, symbol_id, payload, connection_generation, source_connection)
+        elif msg_type == realtime_cap.SNAPSHOT:
+            self._handle_full_snapshot(symbol_id, payload, connection_generation, source_connection)
         elif msg_type == proto.MsgType.CAPABILITY_ACK:
             self._handle_history_capability_ack(payload)
         elif msg_type == proto.MsgType.SESSION_CAPABILITY_ACK:
@@ -1128,7 +1133,7 @@ class RtdataClient:
         elif msg_type == proto.MsgType.SYMBOL_MAP:
             self._handle_symbol_map(payload)
         elif msg_type in (proto.MsgType.SNAPSHOT_FULL, proto.MsgType.SNAPSHOT_DELTA):
-            self._handle_snapshot(symbol_id, payload)
+            self._handle_snapshot(symbol_id, payload, connection_generation, source_connection)
         elif msg_type == proto.MsgType.SUBSCRIBE_RESPONSE:
             ids = proto.decode_subscribe_response(payload)
             self._set_subscribed_codes_from_ids(ids)
@@ -1162,15 +1167,17 @@ class RtdataClient:
         if success:
             with self._token_status_lock:
                 self._token_status = None
-        self._auth_event.set()
         if success:
             logger.info("Authenticated")
+            self._begin_realtime()
             self._begin_history_capability_negotiation()
             self._begin_session_capability_negotiation()
         else:
+            self._reset_realtime('authentication_failed')
             if self._is_terminal_auth_error(error_msg) and self._conn:
                 self._conn.suspend_auto_reconnect()
             logger.error(f"Auth failed: {error_msg}")
+        self._auth_event.set()
 
     def _begin_history_capability_negotiation(self):
         if not self._history_capability.advertise:
@@ -1324,6 +1331,8 @@ class RtdataClient:
 
         if status.status in TERMINAL_TOKEN_STATUSES:
             self._authenticated = False
+            self._auth_success = False
+            self._reset_realtime(status.status)
             if self._conn:
                 self._conn.suspend_auto_reconnect()
 
@@ -1347,10 +1356,27 @@ class RtdataClient:
                 logger.error(f"Token status callback failed: {exc}")
 
     def _handle_symbol_map(self, payload: bytes):
-        self._symbol_map.update_from_payload(payload)
+        with self._realtime_lock:
+            old = self.symbols
+            self._symbol_map.update_from_payload(payload)
+            if old != self.symbols:
+                self._invalidate_realtime_locked(all_quotes=True)
         self._symbol_map_event.set()
 
-    def _handle_snapshot(self, header_symbol_id: int, payload: bytes):
+    def _handle_snapshot(self, header_symbol_id: int, payload: bytes,
+                         generation=None, connection=None):
+        if not self._auth_success:
+            return
+        if self._realtime.mode == 'required_v2':
+            with self._realtime_lock:
+                if not self._auth_success or (connection is not None and connection is not self._conn):
+                    return
+                if generation is not None and self._conn is not None and generation != self._conn.generation:
+                    return
+                current = self._realtime_current_locked(generation, connection)
+            if current:
+                self._realtime_error('six-field quote received; full fields unavailable')
+            return
         quotes_raw = proto.decode_snapshot(payload, header_symbol_id)
         for (sid, bid, ask, last, volume, timestamp) in quotes_raw:
             code = self._symbol_map.id_to_code(sid)
@@ -1365,8 +1391,25 @@ class RtdataClient:
                 volume=volume, timestamp=timestamp,
             )
 
-            with self._quote_cache_lock:
-                self._quote_cache[code] = quote
+            with self._realtime_lock:
+                if self._realtime.mode != 'legacy':
+                    if not self._realtime_current_locked(generation, connection):
+                        return
+                    if len(payload) != 32 or sid != header_symbol_id or code.startswith('UNKNOWN_'):
+                        self._realtime_rejected += 1
+                        return
+                    previous = self._realtime_watermarks.get(sid)
+                    if previous and self._realtime.format(previous[0]) == 'v2':
+                        self._realtime_rejected += 1
+                        return
+                if not self._auth_success or (connection is not None and connection is not self._conn):
+                    return
+                if generation is not None and self._conn is not None and generation != self._conn.generation:
+                    return
+                with self._quote_cache_lock:
+                    self._quote_cache[code] = quote
+                self._realtime_cache_bytes -= self._realtime_cache_sizes.pop(code, 0)
+                self._realtime_changed.notify_all()
 
             with self._stats_lock:
                 self._quotes_received += 1
@@ -1374,7 +1417,7 @@ class RtdataClient:
             self._dispatch_quote(quote)
 
     def _dispatch_quote(self, quote: Quote):
-        if not self._quote_callbacks:
+        if not self._quote_callbacks or not self._quote_is_current(quote):
             return
 
         if not self._async_callbacks:
@@ -1406,6 +1449,8 @@ class RtdataClient:
 
     def _run_quote_callbacks(self, quote: Quote):
         for cb in self._quote_callbacks:
+            if not self._quote_is_current(quote):
+                return
             try:
                 cb(quote)
             except Exception as e:
@@ -1476,8 +1521,15 @@ class RtdataClient:
 
         entry['event'].set()
 
+    def _handle_connection_disconnected(self, connection, reason):
+        if connection is self._conn:
+            self._handle_disconnected(reason)
+
     def _handle_disconnected(self, reason: str):
         self._authenticated = False
+        self._auth_success = False
+        self._reset_realtime(reason or 'disconnected')
+        self._notify_realtime_status()
         self._history_capability.reset(reason or "disconnected")
         self._session_capability.reset(reason or "disconnected")
 
@@ -1530,6 +1582,7 @@ class RtdataClient:
         return not self._session_rehome_requested
 
     def _handle_reconnected(self):
+        self._reset_realtime('reconnecting')
         self._auth_success = False
         self._auth_error = ""
         self._auth_event.clear()
@@ -1567,6 +1620,8 @@ class RtdataClient:
             raise RuntimeError("Symbol map is empty after reconnect, cannot restore subscriptions")
 
         self._authenticated = True
+        if self._realtime.mode == 'required_v2':
+            self.wait_for_realtime()
 
         with self._subscribed_lock:
             codes = list(self._subscribed_codes)

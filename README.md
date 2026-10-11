@@ -3,7 +3,11 @@
 `rtdata` 是用于实时行情、历史 K 线和财务数据查询的 Python SDK。基础功能仅依赖
 Python 标准库；History V2 高速历史流可选用 Zstandard。
 
-当前文档对应版本：**0.3.4**。
+当前候选版本：**0.3.5rc1**，尚未正式发布。
+
+本候选合并实时全字段可选协议和现用历史市场时区修复。实时默认仍为 legacy；
+需要新增字段时显式设置 `realtime_protocol='auto'` 或 `'required_v2'`，详见
+`docs/REALTIME-FULL-FIELDS.md`。历史时间转换不会应用到实时 `trade_time`。
 
 ## 功能概览
 
@@ -154,6 +158,20 @@ rows = api.get_kline(
 时间参数支持毫秒时间戳、`datetime`、`date` 和常用日期时间字符串。仅传日期时会扩展
 为当天 `00:00:00 ~ 23:59:59.999`；`start` 必须不晚于 `end`。旧参数名
 `start_time` / `end_time` 仍兼容。
+
+无时区的日期、`datetime` 和字符串按标的市场解释：A 股/国内期货使用
+`Asia/Shanghai`，港股使用 `Asia/Hong_Kong`，美股使用 `America/New_York`
+（自动处理历史冬夏令时），不再使用运行 SDK 的机器时区。数值始终是 UTC epoch
+毫秒；带时区的 `datetime` 或 ISO 字符串（如 `2025-07-01T09:30:00-04:00`）
+保持其真实时刻。DST 不存在或重复的无时区时间会报错，需提供明确 UTC offset。
+`get_kline_for_today` 也按市场当地日期取当天。
+
+用户 API 的 `end` **包含端点**，SDK 在线协议中转换成 `[start_ms,end_ms+1)`；
+直接调用底层协议时结束时间本身是不包含的。`0` 仍保留为未指定范围的旧哨兵值。
+系统需要 IANA 时区数据；Windows 或精简环境缺失时可安装 `rtdata[market-time]`。
+这是无时区输入的行为变更；需要原宿主时区语义的调用方应传入带时区时间。
+新 SDK 使用独立本地缓存目录 `history_utc_v1`，不读取或删除旧 `history_v1`，
+避免历史错误时区的记录混入新结果。部署时必须与支持 UTC 的 upcloud 配套验证。
 
 ### 复权
 

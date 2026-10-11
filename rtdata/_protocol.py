@@ -49,6 +49,11 @@ class MsgType:
     SYMBOL_LIST_RESPONSE = 0x13
     CAPABILITY_OFFER    = 0x19
     CAPABILITY_ACK      = 0x1A
+    REALTIME_CAPABILITY_OFFER = 0x60
+    REALTIME_CAPABILITY_ACK = 0x61
+    REALTIME_CAPABILITY_COMMIT = 0x62
+    REALTIME_SNAPSHOT_V2 = 0x63
+    REALTIME_SOURCE_STATUS = 0x64
     SESSION_CAPABILITY_OFFER = 0x1B
     SESSION_CAPABILITY_ACK = 0x1C
     SESSION_HANDOFF_OFFER = 0x1D
@@ -293,6 +298,8 @@ def encode_history_request(request_id: int, symbol_id: int, period_str: str,
                            adjust: str = 'none',
                            history_v2_options: bytes = b'') -> bytes:
     """构建 HISTORY_REQUEST 完整消息
+
+    start_time/end_time are UTC epoch milliseconds; the range is [start, end).
 
     payload 格式 (29 + 2 + code_len [+ adjust]):
       request_id(4) + symbol_id(4) + period(1)

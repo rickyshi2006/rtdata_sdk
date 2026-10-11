@@ -33,5 +33,9 @@ class ProtocolError(RtdataError):
     """协议解析错误"""
 
 
+class RealtimeUnavailableError(RtdataError):
+    """Required full-field realtime data is not currently available."""
+
+
 class DiscoveryError(RtdataError):
     """服务发现失败"""

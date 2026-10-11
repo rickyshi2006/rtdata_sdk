@@ -129,13 +129,41 @@ class Connection:
         self._sock = None
         if sock:
             try:
+                sock.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            try:
                 sock.close()
             except Exception:
                 pass
-        if self._recv_thread and self._recv_thread.is_alive():
+        if self._recv_thread and self._recv_thread.is_alive() and self._recv_thread is not threading.current_thread():
             self._recv_thread.join(timeout=3)
-        if self._heartbeat_thread and self._heartbeat_thread.is_alive():
+        if self._heartbeat_thread and self._heartbeat_thread.is_alive() and self._heartbeat_thread is not threading.current_thread():
             self._heartbeat_thread.join(timeout=3)
+
+    def send_for_generation(self, data: bytes, generation: int) -> bool:
+        """Ordered control send; failure wakes recv instead of reconnecting under caller locks."""
+        with self._send_lock:
+            sock = self._sock
+            if sock is None or not self._connected or generation != self._generation:
+                return False
+            try:
+                sock.sendall(data)
+                return True
+            except OSError:
+                try:
+                    sock.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+                return False
+
+    def abort_generation(self, generation: int):
+        with self._send_lock:
+            if self._sock is not None and self._generation == generation:
+                try:
+                    self._sock.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
 
     def request_reconnect(self, reason: str,
                           *, require_pre_reconnect_success: bool = False) -> bool:
@@ -188,6 +216,13 @@ class Connection:
                     if payload_len > proto.MAX_PAYLOAD_SIZE:
                         logger.error(f"Invalid payload_length: {payload_len}")
                         self._handle_disconnect("protocol error", sock)
+                        return
+
+                    if 0x60 <= msg_type <= 0x64 and (
+                        (msg_type == 0x63 and (not symbol_id or not 32 <= payload_len <= 16384))
+                        or (msg_type != 0x63 and (symbol_id or payload_len > 632))
+                    ):
+                        self._handle_disconnect("invalid realtime frame header", sock)
                         return
 
                     total_len = proto.HEADER_SIZE + payload_len

@@ -161,6 +161,39 @@ class HistoryV2ClientFlowTest(unittest.TestCase):
         self.assertFalse(connection.sent_frames(wire.MsgType.HISTORY_CANCEL))
         client.close()
 
+    def test_public_range_encodes_same_half_open_bounds_in_v2(self):
+        client, connection = self.make_client(respond=False)
+        bounds = []
+
+        def send(message):
+            _, _, msg_type = wire.decode_header(message)
+            if msg_type != wire.MsgType.HISTORY_REQUEST:
+                return True
+            payload = message[wire.HEADER_SIZE:]
+            request_id = struct.unpack_from('!I', payload)[0]
+            start, end = struct.unpack_from('!qq', payload, 9)
+            bounds.append((start, end))
+            options = protocol.RequestOptions.decode(payload[-protocol.REQUEST_OPTIONS_STRUCT.size:])
+            begin = protocol.HistoryBegin(request_id=request_id, symbol_id=9001, period=1,
+                                          estimated_rows=0, start_time_ms=start, end_time_ms=end,
+                                          max_block_bytes=options.max_block_bytes)
+            finish = protocol.HistoryEnd(request_id=request_id, actual_total_rows=0,
+                                         actual_uncompressed_bytes=0, actual_compressed_bytes=0,
+                                         chunk_count=0, last_chunk_seq=0xFFFFFFFF)
+            for kind, body in [(wire.MsgType.HISTORY_BEGIN, begin.encode()),
+                               (wire.MsgType.HISTORY_END, finish.encode())]:
+                client._dispatch_message(kind, 0, body, 1, connection)
+            return True
+
+        connection.send = send
+        try:
+            with mock.patch.object(client._symbol_map, 'code_to_id', return_value=9001):
+                self.assertEqual(client.get_kline('AAPL', '1m',
+                                                 start='2025-07-01 09:30', end='2025-07-01 16:00'), [])
+            self.assertEqual(bounds, [(1751376600000, 1751400000001)])
+        finally:
+            client.close()
+
     def test_timeout_sends_one_idempotent_cancel(self):
         client, connection = self.make_client(respond=False)
         with mock.patch.object(

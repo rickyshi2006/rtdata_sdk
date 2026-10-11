@@ -10,7 +10,7 @@
 
 from .client import RtdataClient
 from .api import API
-from .models import Quote, Kline, FinanceData, TokenStatus
+from .models import Quote, Kline, FinanceData, TokenStatus, RealtimeStatus, RealtimeTableStatus
 from ._version import __version__
 from .exceptions import (
     RtdataError,
@@ -22,6 +22,7 @@ from .exceptions import (
     DisconnectedError,
     ProtocolError,
     DiscoveryError,
+    RealtimeUnavailableError,
 )
 
 __all__ = [
@@ -31,6 +32,9 @@ __all__ = [
     'Kline',
     'FinanceData',
     'TokenStatus',
+    'RealtimeStatus',
+    'RealtimeTableStatus',
+    'RealtimeUnavailableError',
     'RtdataError',
     'AuthenticationError',
     'ConnectionError',

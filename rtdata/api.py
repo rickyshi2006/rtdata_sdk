@@ -48,7 +48,8 @@ class API:
                  history_v2_max_block_bytes: int = 256 * 1024,
                  history_capability_ack_timeout: float = 1.0,
                  session_rehome_advertise: bool = True,
-                 session_capability_ack_timeout: float = 1.0):
+                 session_capability_ack_timeout: float = 1.0,
+                 realtime_protocol: str = 'legacy'):
         self._client = RtdataClient(
             token=token,
             api_url=api_url,
@@ -63,6 +64,7 @@ class API:
             history_capability_ack_timeout=history_capability_ack_timeout,
             session_rehome_advertise=session_rehome_advertise,
             session_capability_ack_timeout=session_capability_ack_timeout,
+            realtime_protocol=realtime_protocol,
         )
         self._connected = False
 
@@ -159,6 +161,26 @@ class API:
         """获取最新缓存行情（需先 subscribe）"""
         self._ensure_connected()
         return self._client.get_quote(symbol)
+
+    @property
+    def realtime_status(self):
+        return self._client.realtime_status
+
+    @property
+    def realtime_statistics(self):
+        return self._client.realtime_statistics
+
+    @property
+    def on_realtime_status(self):
+        return self._client.on_realtime_status
+
+    def wait_for_realtime(self, timeout: float = 2.0):
+        self._ensure_connected()
+        return self._client.wait_for_realtime(timeout)
+
+    def wait_for_quote(self, symbol: str, timeout: float = 5.0):
+        self._ensure_connected()
+        return self._client.wait_for_quote(symbol, timeout)
 
     # ── 实时订阅 ──────────────────────────────────────────
 
