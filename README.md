@@ -3,7 +3,11 @@
 `rtdata` 是用于实时行情、历史 K 线和财务数据查询的 Python SDK。基础功能仅依赖
 Python 标准库；History V2 高速历史流可选用 Zstandard。
 
-当前文档对应版本：**0.3.4**。
+当前候选版本：**0.3.5rc1**，尚未正式发布。
+
+本候选合并实时全字段可选协议和现用历史市场时区修复。实时默认仍为 legacy；
+需要新增字段时显式设置 `realtime_protocol='auto'` 或 `'required_v2'`，详见
+`docs/REALTIME-FULL-FIELDS.md`。历史时间转换不会应用到实时 `trade_time`。
 
 ## 功能概览
 

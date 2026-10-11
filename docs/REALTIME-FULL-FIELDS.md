@@ -87,7 +87,8 @@ quotes. `realtime_statistics` exposes rejected rows, cached wire bytes and track
 
 ## Validation scope
 
-Unit tests, fragmented loopback TCP/reconnect tests and actual Cloud receiver/client-server
-to Python SDK integration pass using synthetic data. This is not production acceptance:
-actual Upcloud/DDB shared-memory lifecycle, three-project end-to-end, capacity, timezone/unit
-evidence and runtime sanitizer coverage remain pending. No production switch is enabled.
+Synthetic tests include the full DDB/shared-memory/Upcloud/Cloud/SDK functional chain,
+fragmented loopback TCP, reconnect and legacy compatibility. Production throughput acceptance
+is not complete. Version 0.3.5rc1 also retains the existing market-local history input and UTC
+history-cache fixes; realtime trade_time remains the unmodified DDB value. A built candidate
+wheel is not evidence of production activation or customer installation.
