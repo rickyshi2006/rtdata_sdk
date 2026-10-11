@@ -1,14 +1,15 @@
-# Realtime full-field API (opt-in)
+# Realtime full-field API (automatic negotiation)
 
-The default remains `realtime_protocol='legacy'`. This feature expands the fields from the
-existing DDB stream tables; it does not introduce new market data sources.
+Since 0.3.5rc2, both `RtdataClient` and `API` default to `realtime_protocol='auto'`.
+Existing construction and subscription calls need no new argument to receive full fields
+from a capable server. Older servers fall back to V1. Explicit `legacy` and `required_v2`
+remain available. This expands the fields from existing DDB stream tables, not data sources.
 
 ```python
 from rtdata import RtdataClient, RealtimeUnavailableError
 
 client = RtdataClient(
     token="test-token", host="127.0.0.1", port=9100,
-    realtime_protocol="required_v2",
 )
 
 @client.on_realtime_status
@@ -25,14 +26,15 @@ finally:
     client.close()
 ```
 
-`API(..., realtime_protocol=...)` exposes the same option, status/event, statistics and wait methods.
+`API(token=...)` also negotiates automatically. Both constructors accept
+`realtime_protocol='required_v2'` when fallback must be rejected, or `'legacy'` for old behavior.
 
 ## Modes and readiness
 
 - `legacy`: send no realtime capability offer; keep six-field V1 decoding and mutable legacy
   `Quote` construction/defaults. V1 `available_fields` only includes `bid_price1`, `ask_price1`,
   `last`, `volume`, `trade_time`. The route ID and dictionary symbol are not claimed as DDB columns.
-- `auto`: negotiate after authentication; ACK timeout falls back to V1. Each row is a new object;
+- `auto` (default): negotiate after authentication; ACK timeout falls back to V1. Each row is a new object;
   fallback never retains the previous V2 row's extra fields. Inspect `quote.wire_version`.
 - `required_v2`: `connect()` waits for negotiation (not table readiness). No common schema/ACK
   timeout raises `RealtimeUnavailableError`. Incoming V1 rows never enter cache or callbacks.
@@ -43,7 +45,7 @@ finally:
 `wait_for_realtime(timeout=2)` waits for negotiation only. `wait_for_quote(symbol, timeout=5)`
 does not subscribe implicitly. A successful subscription still does not imply a first quote
 has arrived. Table identity is the registered payload table, never guessed from code suffixes.
-Discovery feature labels are informational; explicit opt-in attempts the authenticated TCP
+Discovery feature labels are informational; automatic negotiation attempts the authenticated TCP
 handshake even when an older discovery response has no realtime feature labels.
 
 `on_realtime_status` receives an immutable status snapshot; `on_error` receives a
@@ -89,6 +91,6 @@ quotes. `realtime_statistics` exposes rejected rows, cached wire bytes and track
 
 Synthetic tests include the full DDB/shared-memory/Upcloud/Cloud/SDK functional chain,
 fragmented loopback TCP, reconnect and legacy compatibility. Production throughput acceptance
-is not complete. Version 0.3.5rc1 also retains the existing market-local history input and UTC
+is not complete. Version 0.3.5rc2 also retains the existing market-local history input and UTC
 history-cache fixes; realtime trade_time remains the unmodified DDB value. A built candidate
 wheel is not evidence of production activation or customer installation.

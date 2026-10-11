@@ -17,6 +17,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Validate tag and package version
+        id: version
         shell: bash
         run: |
           PACKAGE_VERSION="$(python -c 'from rtdata._version import __version__; print(__version__)')"
@@ -26,6 +27,11 @@ jobs:
             exit 1
           fi
           test "v${PACKAGE_VERSION}" = "${GITHUB_REF_NAME}"
+          if [[ "${PACKAGE_VERSION}" =~ (a|b|rc)[0-9]+$ ]]; then
+            echo "prerelease=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "prerelease=false" >> "${GITHUB_OUTPUT}"
+          fi
       - name: Test
         run: python -m unittest discover -s tests -v
       - name: Build immutable package artifacts
@@ -40,7 +46,10 @@ jobs:
           test -n "${WHEEL}"
           python -m venv /tmp/rtdata-release-test
           /tmp/rtdata-release-test/bin/pip install "${WHEEL}[history-v2]"
+          cd /tmp
           /tmp/rtdata-release-test/bin/python - "${EXPECTED_VERSION}" <<'PY'
+          import inspect
+          from pathlib import Path
           import sys
 
           import rtdata
@@ -48,6 +57,9 @@ jobs:
           from rtdata._history_v2_stream import HistoryV2RequestState
 
           assert rtdata.__version__ == sys.argv[1]
+          assert Path(rtdata.__file__).is_relative_to(Path(sys.prefix))
+          for factory in (rtdata.RtdataClient, rtdata.API):
+              assert inspect.signature(factory).parameters['realtime_protocol'].default == 'auto'
           assert zstd_available()
           assert HistoryV2RequestState is not None
           print(f"verified rtdata {rtdata.__version__} with History V2")
@@ -59,3 +71,5 @@ jobs:
             dist/*.tar.gz
             dist/SHA256SUMS
           generate_release_notes: true
+          prerelease: ${{ steps.version.outputs.prerelease == 'true' }}
+          make_latest: ${{ steps.version.outputs.prerelease == 'false' }}

@@ -50,6 +50,8 @@ class ReconnectServer:
 
 
 class FakeConnection:
+    generation = 1
+
     def __init__(self):
         self.connected = True
         self.reconnecting = False
@@ -61,6 +63,13 @@ class FakeConnection:
             self.on_auth = None
             callback()
         return self.connected
+
+    def send_for_generation(self, data, generation):
+        assert generation == self.generation
+        return self.send(data)
+
+    def close(self):
+        self.connected = False
 
 
 class DisconnectingEvent:
@@ -205,6 +214,7 @@ class ReconnectStateMachineTest(unittest.TestCase):
         connection = FakeConnection()
         connection.on_auth = lambda: client._handle_auth_response(b"\x01")
         client._conn = connection
+        self.addCleanup(client.close)
         client._symbol_map._id_to_code = {}
         client._symbol_map._code_to_id = {}
         client._symbol_map_event = DisconnectingEvent(connection)

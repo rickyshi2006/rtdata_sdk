@@ -107,7 +107,7 @@ class RtdataClient(RealtimeClientMixin):
         history_capability_ack_timeout: float = 1.0,
         session_rehome_advertise: bool = True,
         session_capability_ack_timeout: float = 1.0,
-        realtime_protocol: str = 'legacy',
+        realtime_protocol: str = 'auto',
     ):
         self._token = token
         self._host = host

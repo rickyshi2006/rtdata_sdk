@@ -3,11 +3,14 @@
 `rtdata` 是用于实时行情、历史 K 线和财务数据查询的 Python SDK。基础功能仅依赖
 Python 标准库；History V2 高速历史流可选用 Zstandard。
 
-当前候选版本：**0.3.5rc1**，尚未正式发布。
+当前预发行版本：**0.3.5rc2**。
 
-本候选合并实时全字段可选协议和现用历史市场时区修复。实时默认仍为 legacy；
-需要新增字段时显式设置 `realtime_protocol='auto'` 或 `'required_v2'`，详见
-`docs/REALTIME-FULL-FIELDS.md`。历史时间转换不会应用到实时 `trade_time`。
+实时协议默认 `auto`：升级后原有 `API(token=...)`、`RtdataClient(token=...)` 和订阅代码
+无需增加参数，即可与支持全字段的服务端自动协商；旧服务端仍可回退到六字段协议。
+新增字段通过 `quote.fields` 或对应属性读取，原有 `last/bid/ask/volume/timestamp` 等读取方式保留。
+显式 `legacy` 保留旧行为，`required_v2` 则禁止静默回退。详见 `docs/REALTIME-FULL-FIELDS.md`。
+V2快照只读，NULL保留为None；自行修改Quote或按旧dataclass导出的应用需按文档调整。
+历史时间转换不会应用到实时 `trade_time`。
 
 ## 功能概览
 
@@ -37,13 +40,13 @@ Python 标准库；History V2 高速历史流可选用 Zstandard。
 ### 安装 wheel
 
 ```bash
-pip install rtdata-0.3.4-py3-none-any.whl
+pip install rtdata-0.3.5rc2-py3-none-any.whl
 ```
 
 需要 History V2 时安装可选依赖：
 
 ```bash
-pip install "rtdata-0.3.4-py3-none-any.whl[history-v2]"
+pip install "rtdata-0.3.5rc2-py3-none-any.whl[history-v2]"
 ```
 
 也可以从源码开发安装：
