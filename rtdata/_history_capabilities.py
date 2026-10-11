@@ -41,7 +41,7 @@ MAX_BLOCK_BYTES = 4 * 1024 * 1024
 
 
 class CapabilityRole(IntEnum):
-    UPCLOUD = 1
+    PRODUCER = 1
     CLOUD = 2
     RTDATA = 3
 

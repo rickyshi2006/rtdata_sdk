@@ -26,7 +26,7 @@ END_GOLDEN = bytes.fromhex(
 )
 ERROR_GOLDEN = bytes.fromhex(
     "01 02 03 04 00 03 00 01 00 00 00 00 "
-    "00 00 00 00 00 00 00 02 00 03 00 00 64 64 62"
+    "00 00 00 00 00 00 00 02 00 03 00 00 65 72 72"
 )
 CANCEL_GOLDEN = bytes.fromhex(
     "01 02 03 04 00 03 00 00 00 00 00 02"
@@ -135,11 +135,11 @@ class HistoryV2ProtocolTest(unittest.TestCase):
     def test_control_envelope_golden(self):
         failure = v2.HistoryError(
             request_id=0x01020304,
-            error_code=v2.ErrorCode.DDB_ERROR,
+            error_code=v2.ErrorCode.QUERY_ERROR,
             flags=1,
             last_chunk_seq=0,
             delivered_rows=2,
-            message="ddb",
+            message="err",
         )
         self.assertEqual(failure.encode(), ERROR_GOLDEN)
         self.assertEqual(v2.HistoryError.decode(ERROR_GOLDEN), failure)

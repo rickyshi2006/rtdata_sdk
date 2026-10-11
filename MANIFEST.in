@@ -1,0 +1,3 @@
+include CHANGELOG.md DELIVERY.md DEVELOPMENT.md
+recursive-include docs *.md
+recursive-include tests *.py *.tsv *.json

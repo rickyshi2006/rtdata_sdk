@@ -70,6 +70,7 @@ jobs:
             dist/*.whl
             dist/*.tar.gz
             dist/SHA256SUMS
-          generate_release_notes: true
+          body_path: docs/RELEASE-NOTES.md
+          generate_release_notes: false
           prerelease: ${{ steps.version.outputs.prerelease == 'true' }}
           make_latest: ${{ steps.version.outputs.prerelease == 'false' }}

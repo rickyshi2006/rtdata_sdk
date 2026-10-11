@@ -109,9 +109,9 @@ SCHEMAS = MappingProxyType({
     ),
 })
 SOURCES = MappingProxyType({
-    1: ('stocksnapshotStream', 1),
-    2: ('hk_stock_snapshot', 1),
-    3: ('futuresnapshotStream', 2),
-    4: ('us_stock_snapshot', 1),
-    5: ('forex_snapshot', 3),
+    1: ('cn_equity', 1),
+    2: ('hk_equity', 1),
+    3: ('futures', 2),
+    4: ('us_equity', 1),
+    5: ('fx', 3),
 })

@@ -117,12 +117,12 @@ class GatewayHandler(socketserver.BaseRequestHandler):
                     ]
                     if state.claim_rehome():
                         ticket = handoff_protocol.make_ticket(
-                            "loopback-token", state.node_id, "node_aliyun",
+                            "loopback-token", state.node_id, "node_primary",
                             42, "loopback-secret"
                         )
                         rehome = rehome_protocol.RehomeRequest(
                             migration_id=42,
-                            target_node_id="node_aliyun",
+                            target_node_id="node_primary",
                             reason=rehome_protocol.RehomeReason.NODE_DEGRADED,
                             flags=rehome_protocol.FLAG_HANDOFF_TICKET,
                             handoff_ticket=ticket,
@@ -149,9 +149,9 @@ class GatewayServer(socketserver.ThreadingTCPServer):
 
 
 class DiscoveryState:
-    def __init__(self, oracle_port, aliyun_port):
-        self.oracle_port = oracle_port
-        self.aliyun_port = aliyun_port
+    def __init__(self, secondary_port, primary_port):
+        self.secondary_port = secondary_port
+        self.primary_port = primary_port
         self.connect_requests = 0
         self._lock = threading.Lock()
 
@@ -160,8 +160,8 @@ class DiscoveryState:
             self.connect_requests += 1
             first = self.connect_requests == 1
         if first:
-            return "node_oracle", self.oracle_port
-        return "node_aliyun", self.aliyun_port
+            return "node_secondary", self.secondary_port
+        return "node_primary", self.primary_port
 
 
 class DiscoveryHandler(BaseHTTPRequestHandler):
@@ -205,18 +205,18 @@ class DiscoveryHandler(BaseHTTPRequestHandler):
 
 class SessionRehomeLoopbackTest(unittest.TestCase):
     def test_discovery_reauth_capability_and_subscription_restore(self):
-        oracle_state = GatewayState("node_oracle", send_rehome=True)
-        aliyun_state = GatewayState("node_aliyun")
-        oracle = GatewayServer(oracle_state)
-        aliyun = GatewayServer(aliyun_state)
+        secondary_state = GatewayState("node_secondary", send_rehome=True)
+        primary_state = GatewayState("node_primary")
+        secondary = GatewayServer(secondary_state)
+        primary = GatewayServer(primary_state)
         discovery_state = DiscoveryState(
-            oracle.server_address[1], aliyun.server_address[1]
+            secondary.server_address[1], primary.server_address[1]
         )
         discovery = ThreadingHTTPServer(
             ("127.0.0.1", 0), DiscoveryHandler
         )
         discovery.state = discovery_state
-        servers = (oracle, aliyun, discovery)
+        servers = (secondary, primary, discovery)
         threads = [
             threading.Thread(target=server.serve_forever, daemon=True)
             for server in servers
@@ -246,26 +246,26 @@ class SessionRehomeLoopbackTest(unittest.TestCase):
                         lambda: client.session_rehome_negotiated
                     ))
                     client.subscribe(["TEST.LOCAL"])
-                    self.assertTrue(oracle_state.subscribed.wait(2))
+                    self.assertTrue(secondary_state.subscribed.wait(2))
                     self.assertTrue(wait_until(
                         lambda: (
-                            client.current_node_id == "node_aliyun"
+                            client.current_node_id == "node_primary"
                             and client.is_connected
                             and client.session_rehome_negotiated
-                            and aliyun_state.subscribed.is_set()
+                            and primary_state.subscribed.is_set()
                         ),
                         timeout=5,
                     ))
 
                 self.assertGreaterEqual(discovery_state.connect_requests, 2)
-                self.assertEqual(oracle_state.auth_tokens, ["loopback-token"])
-                self.assertEqual(aliyun_state.auth_tokens, ["loopback-token"])
-                self.assertEqual(oracle_state.subscriptions, [[7]])
-                self.assertEqual(aliyun_state.subscriptions, [[7]])
-                self.assertEqual(len(oracle_state.capability_offers), 1)
-                self.assertEqual(len(aliyun_state.capability_offers), 1)
-                self.assertEqual(oracle_state.errors, [])
-                self.assertEqual(aliyun_state.errors, [])
+                self.assertEqual(secondary_state.auth_tokens, ["loopback-token"])
+                self.assertEqual(primary_state.auth_tokens, ["loopback-token"])
+                self.assertEqual(secondary_state.subscriptions, [[7]])
+                self.assertEqual(primary_state.subscriptions, [[7]])
+                self.assertEqual(len(secondary_state.capability_offers), 1)
+                self.assertEqual(len(primary_state.capability_offers), 1)
+                self.assertEqual(secondary_state.errors, [])
+                self.assertEqual(primary_state.errors, [])
         finally:
             if client is not None:
                 client.close()
