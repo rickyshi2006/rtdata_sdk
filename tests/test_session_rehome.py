@@ -30,6 +30,7 @@ class FakeConnection:
         self.connected = True
         self.generation = 1
         self.sent = []
+        self.realtime_sent = []
         self.reconnect_requests = []
         self.reconnect_event = threading.Event()
         self._host = "old.invalid"
@@ -38,6 +39,14 @@ class FakeConnection:
     def send(self, data):
         self.sent.append(data)
         return True
+
+    def send_for_generation(self, data, generation):
+        assert generation == self.generation
+        self.realtime_sent.append(data)
+        return True
+
+    def close(self):
+        self.connected = False
 
     def request_reconnect(self, reason, *, require_pre_reconnect_success=False):
         self.reconnect_requests.append(
@@ -111,6 +120,7 @@ class SessionRehomeClientTest(unittest.TestCase):
         client = RtdataClient(**kwargs)
         connection = FakeConnection()
         client._conn = connection
+        self.addCleanup(client.close)
         client._protocol_features_supported = [
             "session_rehome_v1", "session_rehome_handoff_v1"
         ]
@@ -175,6 +185,7 @@ class SessionRehomeClientTest(unittest.TestCase):
                 proto.MsgType.AUTH_RESPONSE, 0, b"\x01", 1, connection
             )
             self.assertEqual(connection.sent, [])
+            self.assertEqual(len(connection.realtime_sent), 1)
             self.assertFalse(client.session_rehome_negotiated)
 
     def test_old_cloud_discovery_does_not_receive_offer(self):
@@ -184,6 +195,7 @@ class SessionRehomeClientTest(unittest.TestCase):
             proto.MsgType.AUTH_RESPONSE, 0, b"\x01", 1, connection
         )
         self.assertEqual(connection.sent, [])
+        self.assertEqual(len(connection.realtime_sent), 1)
         self.assertEqual(client.session_capability_state, "fallback")
 
     def test_malformed_ack_falls_back_without_disconnect(self):

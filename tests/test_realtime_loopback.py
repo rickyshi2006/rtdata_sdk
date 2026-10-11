@@ -104,17 +104,43 @@ class Peer:
 
 
 class RealtimeLoopbackTest(unittest.TestCase):
-    def make(self, scenario, mode='auto', auto_reconnect=False, **kwargs):
+    def make(self, scenario, mode=None, auto_reconnect=False, **kwargs):
         peer = Peer(scenario)
         self.addCleanup(peer.close)
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
+        if mode is not None:
+            kwargs['realtime_protocol'] = mode
         client = RtdataClient('test', host='127.0.0.1', port=peer.port,
-            realtime_protocol=mode, auto_reconnect=auto_reconnect,
+            auto_reconnect=auto_reconnect,
             symbol_cache_dir=tmp.name, history_cache_enabled=False, **kwargs)
         client._symbol_map.update_from_dict({sid: fixture(sid).fields['code'] for sid in range(1, 6)})
         self.addCleanup(client.close)
         return peer, client
+
+    def test_default_negotiates_full_fields_without_protocol_argument(self):
+        rows = {sid: fixture(sid, null=True, code='DEFAULT' + str(sid)) for sid in range(1, 6)}
+
+        def scenario(peer):
+            sock = peer.accept()
+            peer.negotiate(sock)
+            peer.subscribe(sock)
+            for sid in range(1, 6):
+                sock.sendall(proto.build_message(cap.SNAPSHOT, sid,
+                             wire.encode(rows[sid])))
+            peer.stop.wait(5)
+
+        peer, client = self.make(scenario, async_callbacks=False)
+        client._symbol_map.update_from_dict({sid: row.fields['code'] for sid, row in rows.items()})
+        self.assertEqual(client.realtime_status.mode, 'auto')
+        client.connect(2)
+        client.subscribe(list(client.symbols.values()))
+        for sid in range(1, 6):
+            expected = rows[sid]
+            quote = client.wait_for_quote(expected.fields['code'], 2)
+            self.assertEqual(quote.wire_version, 2)
+            self.assertEqual(dict(quote.fields), dict(expected.fields))
+        self.assertEqual(peer.errors, [])
 
     def test_actual_recv_five_tables_nulls_and_callback_close(self):
         def scenario(peer):

@@ -53,10 +53,12 @@ class FakeConnection:
 
 
 class RealtimeClientTest(unittest.TestCase):
-    def client(self, mode='auto', **kwargs):
+    def client(self, mode=None, **kwargs):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        client = RtdataClient(token='test', realtime_protocol=mode, async_callbacks=False,
+        if mode is not None:
+            kwargs['realtime_protocol'] = mode
+        client = RtdataClient(token='test', async_callbacks=False,
                               auto_reconnect=False, symbol_cache_dir=tmp.name,
                               history_cache_enabled=False, **kwargs)
         self.addCleanup(client.close)
@@ -81,13 +83,38 @@ class RealtimeClientTest(unittest.TestCase):
         client._dispatch_message(cap.SNAPSHOT, sid or snap.source_id, wire.encode(snap),
                                  generation, conn or client._conn)
 
-    def test_public_defaults_and_explicit_api(self):
+    def test_public_defaults_negotiate_without_protocol_argument(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        for factory in (RtdataClient, API):
+            with self.subTest(factory=factory.__name__):
+                public = factory('test', async_callbacks=False, symbol_cache_dir=tmp.name,
+                                 history_cache_enabled=False)
+                self.addCleanup(public.close)
+                client = public._client if isinstance(public, API) else public
+                client._conn = FakeConnection()
+                client._symbol_map.update_from_dict({1: fixture().fields['code']})
+                self.assertEqual(public.realtime_status.mode, 'auto')
+                nonce = self.negotiate(client)
+                self.status(client, nonce)
+                self.quote(client, fixture())
+                quote = public.get_quote(fixture().fields['code'])
+                self.assertEqual(quote.wire_version, 2)
+                self.assertEqual(dict(quote.fields), dict(fixture().fields))
+
+    def test_explicit_protocol_modes_are_preserved(self):
         client = self.client('legacy')
         client._dispatch_message(proto.MsgType.AUTH_RESPONSE, 0, b'\x01', 1, client._conn)
         self.assertEqual(client._conn.sent, [])
-        api = API('test', async_callbacks=False, realtime_protocol='required_v2')
-        self.addCleanup(api.close)
-        self.assertEqual(api.realtime_status.mode, 'required_v2')
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        for factory in (RtdataClient, API):
+            for mode in ('auto', 'legacy', 'required_v2'):
+                with self.subTest(factory=factory.__name__, mode=mode):
+                    public = factory('test', async_callbacks=False, realtime_protocol=mode,
+                                     symbol_cache_dir=tmp.name, history_cache_enabled=False)
+                    self.addCleanup(public.close)
+                    self.assertEqual(public.realtime_status.mode, mode)
         with self.assertRaises(ValueError):
             self.client('wrong')
 

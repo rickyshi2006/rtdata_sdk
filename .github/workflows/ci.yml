@@ -40,7 +40,10 @@ jobs:
           test -n "${WHEEL}"
           python -m venv /tmp/rtdata-wheel-test
           /tmp/rtdata-wheel-test/bin/pip install "${WHEEL}[history-v2]"
+          cd /tmp
           /tmp/rtdata-wheel-test/bin/python - "${EXPECTED_VERSION}" <<'PY'
+          import inspect
+          from pathlib import Path
           import sys
 
           import rtdata
@@ -48,6 +51,9 @@ jobs:
           from rtdata._history_v2_stream import HistoryV2RequestState
 
           assert rtdata.__version__ == sys.argv[1]
+          assert Path(rtdata.__file__).is_relative_to(Path(sys.prefix))
+          for factory in (rtdata.RtdataClient, rtdata.API):
+              assert inspect.signature(factory).parameters['realtime_protocol'].default == 'auto'
           assert zstd_available()
           assert HistoryV2RequestState is not None
           print(f"verified rtdata {rtdata.__version__} with History V2")

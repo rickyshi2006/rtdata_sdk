@@ -12,11 +12,20 @@ class FakeConnection:
         self.connected = True
         self.generation = generation
         self.sent = []
+        self.realtime_sent = []
         self._send_result = send_result
 
     def send(self, data):
         self.sent.append(data)
         return self._send_result
+
+    def send_for_generation(self, data, generation):
+        assert generation == self.generation
+        self.realtime_sent.append(data)
+        return self._send_result
+
+    def close(self):
+        self.connected = False
 
 
 def decode_message(message):
@@ -41,6 +50,7 @@ class HistoryCapabilityRuntimeTest(unittest.TestCase):
                 **kwargs,
             )
         client._conn = connection or FakeConnection()
+        self.addCleanup(client.close)
         return client
 
     def test_default_disabled_sends_no_extra_message(self):
@@ -50,6 +60,7 @@ class HistoryCapabilityRuntimeTest(unittest.TestCase):
         client._dispatch_message(proto.MsgType.AUTH_RESPONSE, 0, b"\x01", 1)
 
         self.assertEqual(connection.sent, [])
+        self.assertEqual(len(connection.realtime_sent), 1)
         self.assertEqual(client.history_capability_state, "disabled")
         self.assertFalse(client.history_v2_eligible)
 
