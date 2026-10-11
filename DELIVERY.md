@@ -3,17 +3,17 @@
 ## 当前包信息
 
 - 包名：`rtdata`
-- 当前版本：`0.3.4`
+- 当前版本：`0.3.5`
 
-本次提升版本号，产物更新为 `0.3.4`。
+本次产物版本统一为 `0.3.5`。
 
-## v0.3.4 变更摘要
+## v0.3.5 变更摘要
 
-- 默认服务发现 API 地址迁移为 `https://api.vrrv.ccwu.cc`。
-- 公开下载和 token 兑换地址迁移为 `https://rtdata.vrrv.ccwu.cc`。
-- 同步更新 README、使用文档和示例中的连接域名。
+- 默认自动获取实时扩展字段，现有连接和订阅调用无需新增参数。
+- 原有常用行情属性保留，扩展字段通过同名属性或 `quote.fields` 读取。
+- 改进历史行情时间处理、分页和本地缓存。
 
-发布时必须创建匹配的 `v0.3.4` tag；GitHub Release 和构建产物由 release workflow
+发布时必须创建匹配的 `v0.3.5` tag；GitHub Release 和构建产物由 release workflow
 生成，发布后的包文件不做原地替换。
 
 ## 当前支持范围
@@ -21,7 +21,7 @@
 - 实时数据：A 股、港股、美股、期货、外汇（按网关配置和权限）
 - 历史 K 线：A 股、港股、美股、期货、期权（按网关配置）
 - 历史复权：A 股、港股、美股
-- 财务数据：A 股、港股、美股；PIT 当前主要支持含公告日的 A 股源表
+- 财务数据：A 股、港股、美股；PIT 当前支持含公告日期的 A 股财务数据
 
 后续如有市场范围调整，再按实际能力更新文档与交付说明。
 
@@ -33,8 +33,8 @@
 
 文件：
 
-- `rtdata-0.3.4-py3-none-any.whl`
-- `rtdata-0.3.4.tar.gz`
+- `rtdata-0.3.5-py3-none-any.whl`
+- `rtdata-0.3.5.tar.gz`
 
 优先建议对外提供 `.whl`。
 
@@ -135,25 +135,25 @@ print(api.last_subscribe_rejected)
 ### 安装 wheel
 
 ```bash
-pip install rtdata-0.3.4-py3-none-any.whl
+pip install rtdata-0.3.5-py3-none-any.whl
 ```
 
 推荐安装 History V2 高速历史流依赖：
 
 ```bash
-pip install "rtdata-0.3.4-py3-none-any.whl[history-v2]"
+pip install "rtdata-0.3.5-py3-none-any.whl[history-v2]"
 ```
 
 ### 安装源码包
 
 ```bash
-pip install rtdata-0.3.4.tar.gz
+pip install rtdata-0.3.5.tar.gz
 ```
 
 ### 升级安装
 
 ```bash
-pip install --upgrade "rtdata-0.3.4-py3-none-any.whl[history-v2]"
+pip install --upgrade "rtdata-0.3.5-py3-none-any.whl[history-v2]"
 ```
 
 ## 建议同时交付给客户的内容

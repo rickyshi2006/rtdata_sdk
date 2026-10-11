@@ -23,7 +23,7 @@ def full_capabilities(role, max_block_bytes=256 * 1024):
 
 class HistoryCapabilitiesTest(unittest.TestCase):
     def test_golden_fixture(self):
-        value = full_capabilities(capabilities.CapabilityRole.UPCLOUD)
+        value = full_capabilities(capabilities.CapabilityRole.PRODUCER)
         value = replace(
             value,
             compression_mask=(
@@ -54,7 +54,7 @@ class HistoryCapabilitiesTest(unittest.TestCase):
             capabilities.HistoryCapabilities.decode(bytes(unknown_feature))
 
         invalid_block = replace(
-            full_capabilities(capabilities.CapabilityRole.UPCLOUD),
+            full_capabilities(capabilities.CapabilityRole.PRODUCER),
             max_block_bytes=1024,
         )
         with self.assertRaisesRegex(ValueError, "block size"):
@@ -62,7 +62,7 @@ class HistoryCapabilitiesTest(unittest.TestCase):
 
     def test_intersection_and_v1_fallback(self):
         upstream = full_capabilities(
-            capabilities.CapabilityRole.UPCLOUD,
+            capabilities.CapabilityRole.PRODUCER,
             max_block_bytes=512 * 1024,
         )
         cloud = replace(

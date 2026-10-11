@@ -101,15 +101,15 @@ class HistoryV2RequestStateTest(unittest.TestCase):
         state = self.make_state()
         failure = protocol.HistoryError(
             request_id=self.request_id,
-            error_code=protocol.ErrorCode.DDB_ERROR,
-            message="ddb failed",
+            error_code=protocol.ErrorCode.QUERY_ERROR,
+            message="query failed",
         )
         result = state.handle_frame(
             protocol.MSG_HISTORY_ERROR, failure.encode()
         )
         self.assertTrue(result.terminal)
-        self.assertIn("ddb_error", result.error)
-        self.assertIn("ddb failed", result.error)
+        self.assertIn("query_error", result.error)
+        self.assertIn("query failed", result.error)
 
     def test_begin_must_match_fixed_request_options(self):
         state = self.make_state()

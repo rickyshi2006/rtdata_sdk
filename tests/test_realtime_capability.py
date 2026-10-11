@@ -41,7 +41,7 @@ class RealtimeCapabilityTests(unittest.TestCase):
         return offer, ack, commit
 
     def test_both_directions_and_readiness(self):
-        for role in (c.Role.UPCLOUD, c.Role.SDK):
+        for role in (c.Role.PRODUCER, c.Role.SDK):
             with self.subTest(role=role):
                 a, b = self.pair(role)
                 self.activate(a, b)
@@ -127,7 +127,7 @@ class RealtimeCapabilityTests(unittest.TestCase):
             a.sent(1, offer, True, 0)
             ack = c.supported(c.Role.CLOUD, 1, 512)
             changes = {'sources': 3, 'max_payload': 513, 'registry': bytes(32),
-                       'schemas': (replace(ack.schemas[0], hash=bytes(32)),), 'role': c.Role.UPCLOUD}
+                       'schemas': (replace(ack.schemas[0], hash=bytes(32)),), 'role': c.Role.PRODUCER}
             a.receive(1, c.ACK, replace(ack, **{field: changes[field]}).encode(), 1)
             self.assertEqual(a.phase, 'closed', field)
 

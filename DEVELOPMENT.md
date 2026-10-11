@@ -29,8 +29,8 @@ The SDK must:
 - treat malformed optional control notifications as non-fatal;
 - preserve existing `AUTH_RESPONSE` behavior.
 
-The supported compatibility matrix is documented in the Cloud Gateway
-`protocol/COMPATIBILITY.md`.
+Client-facing compatibility and quote behavior are documented in
+`docs/REALTIME-FULL-FIELDS.md` and `docs/SDK_USAGE.md`.
 
 ## Release
 
@@ -43,3 +43,11 @@ The supported compatibility matrix is documented in the Cloud Gateway
 
 Published package files are never replaced in place. Fixes use a new patch
 version.
+
+## Public content
+
+Keep this repository and release notes focused on client APIs and usage.
+Do not publish service implementation details, storage technology, internal
+resource names, deployment topology, machine identifiers or operational reports.
+Use market categories and synthetic endpoints in examples and tests. Keep
+protocol numeric identifiers stable when changing client-facing labels.

@@ -3,7 +3,7 @@
 `rtdata` 是用于实时行情、历史 K 线和财务数据查询的 Python SDK。基础功能仅依赖
 Python 标准库；History V2 高速历史流可选用 Zstandard。
 
-当前预发行版本：**0.3.5rc2**。
+当前版本：**0.3.5**。
 
 实时协议默认 `auto`：升级后原有 `API(token=...)`、`RtdataClient(token=...)` 和订阅代码
 无需增加参数，即可与支持全字段的服务端自动协商；旧服务端仍可回退到六字段协议。
@@ -40,13 +40,13 @@ V2快照只读，NULL保留为None；自行修改Quote或按旧dataclass导出�
 ### 安装 wheel
 
 ```bash
-pip install rtdata-0.3.5rc2-py3-none-any.whl
+pip install rtdata-0.3.5-py3-none-any.whl
 ```
 
 需要 History V2 时安装可选依赖：
 
 ```bash
-pip install "rtdata-0.3.5rc2-py3-none-any.whl[history-v2]"
+pip install "rtdata-0.3.5-py3-none-any.whl[history-v2]"
 ```
 
 也可以从源码开发安装：
@@ -174,7 +174,7 @@ rows = api.get_kline(
 系统需要 IANA 时区数据；Windows 或精简环境缺失时可安装 `rtdata[market-time]`。
 这是无时区输入的行为变更；需要原宿主时区语义的调用方应传入带时区时间。
 新 SDK 使用独立本地缓存目录 `history_utc_v1`，不读取或删除旧 `history_v1`，
-避免历史错误时区的记录混入新结果。部署时必须与支持 UTC 的 upcloud 配套验证。
+避免历史错误时区的记录混入新结果。
 
 ### 复权
 

@@ -1,4 +1,4 @@
-"""Bounded, schema-typed realtime V2 row codec; connections require explicit opt-in."""
+"""Bounded, schema-typed realtime V2 row codec with negotiated compatibility."""
 import math
 import struct
 from dataclasses import dataclass

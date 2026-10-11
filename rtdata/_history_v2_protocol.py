@@ -381,7 +381,7 @@ class HistoryEnd:
 class ErrorCode(IntEnum):
     UNSUPPORTED = 1
     INVALID_REQUEST = 2
-    DDB_ERROR = 3
+    QUERY_ERROR = 3
     ENCODE_ERROR = 4
     CANCELLED = 5
     TIMEOUT = 6

@@ -86,7 +86,7 @@ class SessionProtocolTest(unittest.TestCase):
     def test_rehome_round_trip_and_validation(self):
         request = rehome_protocol.RehomeRequest(
             migration_id=0x0102030405060708,
-            target_node_id="node_aliyun",
+            target_node_id="node_primary",
             reason=rehome_protocol.RehomeReason.NODE_DEGRADED,
         )
         self.assertEqual(
@@ -216,7 +216,7 @@ class SessionRehomeClientTest(unittest.TestCase):
     def test_rehome_requires_negotiation_and_deduplicates(self):
         client, connection = self.make_client()
         payload = rehome_protocol.RehomeRequest(
-            migration_id=7, target_node_id="node_aliyun",
+            migration_id=7, target_node_id="node_primary",
             flags=rehome_protocol.FLAG_HANDOFF_TICKET,
             handoff_ticket=b"signed-ticket"
         ).encode()
@@ -243,7 +243,7 @@ class SessionRehomeClientTest(unittest.TestCase):
         client, connection = self.make_client()
         self.negotiate(client, connection)
         client._session_rehome_requested = True
-        client._session_rehome_target = "node_aliyun"
+        client._session_rehome_target = "node_primary"
 
         with patch.object(
             client, "_do_discovery", side_effect=RuntimeError("unavailable")
@@ -258,38 +258,38 @@ class SessionRehomeClientTest(unittest.TestCase):
         client, connection = self.make_client()
         self.negotiate(client, connection)
         client._session_rehome_requested = True
-        client._session_rehome_target = "node_aliyun"
+        client._session_rehome_target = "node_primary"
 
         with patch(
             "rtdata._discovery.discover_endpoint",
             return_value={
-                "tcp_host": "oracle.invalid",
+                "tcp_host": "secondary.invalid",
                 "tcp_port": 9100,
-                "node_id": "node_oracle",
+                "node_id": "node_secondary",
             },
         ):
-            with self.assertRaisesRegex(Exception, "expected node_aliyun"):
+            with self.assertRaisesRegex(Exception, "expected node_primary"):
                 client._before_reconnect()
 
     def test_rehome_discovery_targets_requested_node(self):
         client, connection = self.make_client()
         self.negotiate(client, connection)
         client._session_rehome_requested = True
-        client._session_rehome_target = "node_aliyun"
+        client._session_rehome_target = "node_primary"
 
         with patch.object(client, "_do_discovery") as discover:
             client._before_reconnect()
 
         discover.assert_called_once_with(
-            timeout=10.0, target_node_id="node_aliyun"
+            timeout=10.0, target_node_id="node_primary"
         )
 
     def test_targeted_discovery_sends_handoff_marker(self):
         response = Mock()
         response.read.return_value = json.dumps({
-            "tcp_host": "aliyun.invalid",
+            "tcp_host": "primary.invalid",
             "tcp_port": 9100,
-            "node_id": "node_aliyun",
+            "node_id": "node_primary",
         }).encode("utf-8")
         response.__enter__ = Mock(return_value=response)
         response.__exit__ = Mock(return_value=False)
@@ -299,13 +299,13 @@ class SessionRehomeClientTest(unittest.TestCase):
         ) as urlopen:
             discovery.discover_endpoint(
                 "https://gateway.invalid", "token",
-                target_node_id="node_aliyun",
+                target_node_id="node_primary",
             )
 
         request = urlopen.call_args.args[0]
         self.assertEqual(
             json.loads(request.data),
-            {"token": "token", "target_node_id": "node_aliyun"},
+            {"token": "token", "target_node_id": "node_primary"},
         )
         self.assertEqual(request.get_header("X-session-handoff"), "1")
 
@@ -350,7 +350,7 @@ class SessionRehomeClientTest(unittest.TestCase):
     def test_rehome_flag_clears_only_after_reconnect_completes(self):
         client, _connection = self.make_client()
         client._session_rehome_requested = True
-        client._session_rehome_target = "node_aliyun"
+        client._session_rehome_target = "node_primary"
         client._handle_reconnect_completed()
         self.assertFalse(client._session_rehome_requested)
         self.assertEqual(client._session_rehome_target, "")
@@ -361,7 +361,7 @@ class SessionRehomeClientTest(unittest.TestCase):
         connection.request_reconnect = Mock(return_value=False)
         payload = rehome_protocol.RehomeRequest(
             migration_id=99,
-            target_node_id="node_aliyun",
+            target_node_id="node_primary",
         ).encode()
 
         client._dispatch_message(

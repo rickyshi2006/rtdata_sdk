@@ -18,7 +18,7 @@ _SOURCE = struct.Struct('<HHIQ')
 
 
 class Role(IntEnum):
-    UPCLOUD = 1
+    PRODUCER = 1
     CLOUD = 2
     SDK = 3
 
@@ -177,8 +177,8 @@ class Action:
 class Session:
     def __init__(self, role, peer, mode='legacy', sources=SOURCE_MASK, max_payload=MAX_PAYLOAD):
         self.role, self.peer = Role(role), Role(peer)
-        if (self.role, self.peer) not in ((Role.UPCLOUD, Role.CLOUD), (Role.SDK, Role.CLOUD),
-                                         (Role.CLOUD, Role.UPCLOUD), (Role.CLOUD, Role.SDK)):
+        if (self.role, self.peer) not in ((Role.PRODUCER, Role.CLOUD), (Role.SDK, Role.CLOUD),
+                                         (Role.CLOUD, Role.PRODUCER), (Role.CLOUD, Role.SDK)):
             raise ValueError('invalid realtime role pair')
         if mode not in ('legacy', 'auto', 'required_v2'):
             raise ValueError('invalid realtime mode')
@@ -198,7 +198,7 @@ class Session:
 
     @property
     def producer(self):
-        return self.role == Role.UPCLOUD or (self.role == Role.CLOUD and self.peer == Role.SDK)
+        return self.role == Role.PRODUCER or (self.role == Role.CLOUD and self.peer == Role.SDK)
 
     def reset(self, generation, authenticated):
         if not _uint(generation, 64) or generation <= self.generation:
