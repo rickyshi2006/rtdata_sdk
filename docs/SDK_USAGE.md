@@ -14,7 +14,7 @@
 - History V2 能力协商、列式压缩和 V1 自动回退
 - 安全 session rehome（故障转移后回到账号首选节点）
 
-当前版本：`0.3.5`
+当前待发布版本：`0.3.6`
 
 ## 1.1 当前支持范围
 
@@ -38,16 +38,16 @@ pip install -e .
 ### 2.2 安装 wheel
 
 ```bash
-pip install rtdata-0.3.5-py3-none-any.whl
+pip install rtdata-0.3.6-py3-none-any.whl
 ```
 
-需要 History V2 高速历史流时，安装可选的 Zstandard 依赖：
+普通安装已包含 Zstandard，默认优先使用 History V2。旧 extra 安装命令仍兼容：
 
 ```bash
-pip install "rtdata-0.3.5-py3-none-any.whl[history-v2]"
+pip install "rtdata-0.3.6-py3-none-any.whl[history-v2]"
 ```
 
-未安装该可选依赖时，SDK 自动使用兼容的 History V1。
+连接端不支持或协商超时时自动兼容 History V1，无需强制升级旧服务端。
 
 ## 3. 两套入口
 
@@ -143,8 +143,8 @@ API(
     symbol_cache_dir: str | None = None,
     history_cache_dir: str | None = None,
     history_cache_enabled: bool = True,
-    history_v2_advertise: bool = False,
-    history_v2_default: bool = False,
+    history_v2_advertise: bool = True,
+    history_v2_default: bool = True,
     history_v2_max_block_bytes: int = 256 * 1024,
     history_capability_ack_timeout: float = 1.0,
     session_rehome_advertise: bool = True,
@@ -168,8 +168,8 @@ RtdataClient(
     history_cache_enabled: bool = True,
     async_callbacks: bool = True,
     callback_queue_size: int = 1000,
-    history_v2_advertise: bool = False,
-    history_v2_default: bool = False,
+    history_v2_advertise: bool = True,
+    history_v2_default: bool = True,
     history_v2_max_block_bytes: int = 256 * 1024,
     history_capability_ack_timeout: float = 1.0,
     session_rehome_advertise: bool = True,
@@ -376,27 +376,27 @@ api = rtdata.API(
 
 ### 8.5 History V2
 
-History V2 是可选的列式压缩历史流。客户端需要安装 `history-v2` extra，并显式开启
-能力声明和默认选择：
+History V2 是默认优先的列式压缩历史流。普通安装包含所需依赖，两个公开入口均无需
+额外设置协议参数；协商成功使用 V2，旧服务端仍兼容 V1：
 
 ```python
 with rtdata.API(
     token="your_token",
     api_url="https://api.vrrv.ccwu.cc",
-    history_v2_advertise=True,
-    history_v2_default=True,
     history_cache_enabled=False,
 ) as api:
-    print(api.history_capability_state)
-    print(api.history_v2_eligible)
-    print(api.history_capability_fallback_reason)
     rows = api.get_kline(
         "000001.SZ", period="1d", start="2025-06-02", end="2025-06-17"
     )
+    print(api.history_capability_state)
+    print(api.history_v2_eligible)
+    print(api.history_capability_fallback_reason)
 ```
 
 `history_v2_advertise` 负责能力协商，`history_v2_default` 决定协商成功后是否优先发送
-V2。缺少 Zstandard、连接端不支持或 ACK 超时都会安全回退到 V1；回退原因可通过
+V2，两者默认均为 `True`。首次回源请求等待正在进行的协商，计入原查询超时。
+设置 `history_v2_default=False` 可强制使用 V1 查询；同时设置 `history_v2_advertise=False`
+可关闭能力声明。手工跳过依赖导致缺少 Zstandard、连接端不支持或 ACK 超时都会回退到 V1；回退原因可通过
 `history_capability_fallback_reason` 查看。
 
 ## 9. 财务查询

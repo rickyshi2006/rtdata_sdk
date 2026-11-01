@@ -22,7 +22,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Run unit and compatibility tests
         run: |
-          python -m pip install 'zstandard>=0.23,<1' 'tzdata>=2025.2'
+          python -m pip install '.[market-time]'
           python -m unittest discover -s tests -v
 
   package:
@@ -42,7 +42,7 @@ jobs:
           WHEEL="$(find dist -maxdepth 1 -type f -name '*.whl' -print -quit)"
           test -n "${WHEEL}"
           python -m venv /tmp/rtdata-wheel-test
-          /tmp/rtdata-wheel-test/bin/pip install "${WHEEL}[history-v2]"
+          /tmp/rtdata-wheel-test/bin/pip install "${WHEEL}"
           cd /tmp
           /tmp/rtdata-wheel-test/bin/python - "${EXPECTED_VERSION}" <<'PY'
           import inspect
@@ -57,6 +57,8 @@ jobs:
           assert Path(rtdata.__file__).is_relative_to(Path(sys.prefix))
           for factory in (rtdata.RtdataClient, rtdata.API):
               assert inspect.signature(factory).parameters['realtime_protocol'].default == 'auto'
+              assert inspect.signature(factory).parameters['history_v2_advertise'].default is True
+              assert inspect.signature(factory).parameters['history_v2_default'].default is True
           assert zstd_available()
           assert HistoryV2RequestState is not None
           print(f"verified rtdata {rtdata.__version__} with History V2")
