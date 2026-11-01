@@ -50,6 +50,8 @@ class HistoryCapabilityRuntime:
             )
         )
         self._lock = threading.Lock()
+        self._settled = threading.Event()
+        self._settled.set()
         self._timer: Optional[threading.Timer] = None
         self._generation = 0
         self._state = "disabled" if not advertise else "idle"
@@ -73,6 +75,7 @@ class HistoryCapabilityRuntime:
                 capabilities.CapabilityRole.CLOUD
             )
             self._fallback_reason = reason
+            self._settled.set()
 
     def mark_peer_unsupported(self) -> None:
         with self._lock:
@@ -95,6 +98,7 @@ class HistoryCapabilityRuntime:
                 capabilities.CapabilityRole.CLOUD
             )
             self._fallback_reason = ""
+            self._settled.clear()
 
         sent = False
         try:
@@ -139,7 +143,13 @@ class HistoryCapabilityRuntime:
             self._negotiated = True
             self._capabilities = acknowledged
             self._fallback_reason = ""
+            self._settled.set()
             return True
+
+    def wait_until_settled(self, timeout: float) -> None:
+        # Optional negotiation may finish while connect() is already returning.
+        # The caller owns its total query budget; never start a second timer.
+        self._settled.wait(timeout=max(0.0, timeout))
 
     def snapshot(self) -> HistoryCapabilitySnapshot:
         with self._lock:
@@ -201,6 +211,7 @@ class HistoryCapabilityRuntime:
             capabilities.CapabilityRole.CLOUD
         )
         self._fallback_reason = reason
+        self._settled.set()
 
     def _cancel_timer_locked(self) -> None:
         timer = self._timer
