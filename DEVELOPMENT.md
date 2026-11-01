@@ -1,5 +1,14 @@
 # Development and release process
 
+## Local-first integration
+
+Review and test the development branch, merge into the original checkout's
+LOCAL `main`, validate there, then synchronize that exact main to GitHub.
+Do not merge remotely first, force-push, or bypass repository protection.
+Back up and preserve unrelated uncommitted work and linked worktrees before
+integration. Source synchronization does not publish a package or authorize
+deployment; release tags and immutable artifacts are a separate step.
+
 ## Branching and CI
 
 - `main` must remain releasable.

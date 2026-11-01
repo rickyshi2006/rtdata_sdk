@@ -110,7 +110,7 @@ class _FullQuote(Quote):
                 return fields[raw]
             if name in _FullQuote._books:
                 prefix = _FullQuote._books[name]
-                return [fields[prefix + str(i)] for i in range(1, 6) if prefix + str(i) in fields]
+                return [fields[prefix + str(i)] for i in range(1, 11) if prefix + str(i) in fields]
         return object.__getattribute__(self, name)
 
     @property

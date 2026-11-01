@@ -12,7 +12,9 @@ class PublicContractTest(unittest.TestCase):
     def test_quote_categories_are_public_market_labels(self):
         expected = {1: ('cn_equity', 1), 2: ('hk_equity', 1), 3: ('futures', 2),
                     4: ('us_equity', 1), 5: ('fx', 3)}
-        self.assertEqual(dict(SOURCES), expected)
+        self.assertEqual({sid: SOURCES[sid] for sid in range(1, 6)}, expected)
+        self.assertEqual({sid: SOURCES[sid] for sid in (6, 7)},
+                         {6: ('overseas_futures', 4), 7: ('crypto', 5)})
         for sid, (label, _) in expected.items():
             quote = Quote.from_snapshot(fixture(sid), sid, fixture(sid).fields['code'])
             self.assertEqual(quote.source_table, label)
@@ -20,7 +22,7 @@ class PublicContractTest(unittest.TestCase):
     def test_display_labels_do_not_change_wire_identity(self):
         self.assertEqual(REGISTRY_SHA256,
                          '0acc8d004af8a4a16e6a8dec97a21d222941d0877076cd1eff3c548f8efe0269')
-        self.assertEqual(dict(SCHEMA_HASHES), {
+        self.assertEqual({sid: SCHEMA_HASHES[sid] for sid in (1, 2, 3)}, {
             1: 'b626c7e17c707bf20db69c155a96cae88715dfb1e03427ce73d59b5291255a87',
             2: '5ea9dc55fbbcf038943ff8018373b29f5ae87544a07e8ce6942c42b180342de5',
             3: 'f34d842d61e9c60f7582ce36a18348a6139a9519a7dd7a7d1248103543d6deb5',

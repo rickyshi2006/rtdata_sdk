@@ -8,6 +8,8 @@ from ._realtime_schema import SCHEMAS, SOURCES
 
 OFFER, ACK, COMMIT, SNAPSHOT = 0x60, 0x61, 0x62, 0x63
 MAX_PAYLOAD_BYTES = 16384
+EXTENDED_PAYLOAD_BYTES = 1024 * 1024
+RAW_BITS_BYTES = 512 * 1024
 MAX_STRING_BYTES = 1024
 ENVELOPE = struct.Struct('<4H2Q2HI')
 NUMBERS = {name: struct.Struct(fmt) for name, fmt in {
@@ -21,11 +23,11 @@ def _schema(source_id):
     return SCHEMAS[SOURCES[source_id][1]]
 
 
-def _validate_value(kind, value):
+def _validate_value(kind, value, limit=MAX_STRING_BYTES):
     if value is None:
         return
     if kind in ('SYMBOL', 'STRING'):
-        if type(value) is not str or len(value.encode('utf-8')) > MAX_STRING_BYTES:
+        if type(value) is not str or len(value.encode('utf-8')) > limit:
             raise ValueError('invalid realtime string')
     elif kind == 'DOUBLE':
         if type(value) is not float:
@@ -51,8 +53,8 @@ class Snapshot:
         values = tuple(self.values)
         if len(values) != len(fields):
             raise ValueError('realtime field count mismatch')
-        for (_, kind), value in zip(fields, values):
-            _validate_value(kind, value)
+        for (name, kind), value in zip(fields, values):
+            _validate_value(kind, value, RAW_BITS_BYTES if self.source_id >= 6 and name == 'raw_bits' else MAX_STRING_BYTES)
         code = values[0]
         if not isinstance(code, str) or not code or '\x00' in code or values[1] is None:
             raise ValueError('missing realtime code/time')
@@ -82,27 +84,29 @@ def encode(snapshot):
     columns = _schema(snapshot.source_id)
     bitmap = bytearray((len(columns) + 7) // 8)
     body = bytearray()
-    for i, ((_, kind), value) in enumerate(zip(columns, snapshot.values)):
+    for i, ((name, kind), value) in enumerate(zip(columns, snapshot.values)):
         if value is None:
             bitmap[i // 8] |= 1 << (i % 8)
         elif kind in ('SYMBOL', 'STRING'):
             raw = value.encode('utf-8')
-            body.extend(struct.pack('<H', len(raw)))
+            body.extend(struct.pack('<I' if snapshot.source_id >= 6 and name == 'raw_bits' else '<H', len(raw)))
             body.extend(raw)
         else:
             body.extend(NUMBERS[kind].pack(value))
     payload = ENVELOPE.pack(1, snapshot.schema_id, snapshot.source_id, len(columns),
                             snapshot.source_epoch, snapshot.sequence, len(bitmap), 0, len(body)) + bitmap + body
-    if len(payload) > MAX_PAYLOAD_BYTES:
+    if len(payload) > (EXTENDED_PAYLOAD_BYTES if snapshot.source_id >= 6 else MAX_PAYLOAD_BYTES):
         raise ValueError('realtime payload too long')
     return bytes(payload)
 
 
 def decode(payload):
-    if not ENVELOPE.size <= len(payload) <= MAX_PAYLOAD_BYTES:
+    if not ENVELOPE.size <= len(payload) <= EXTENDED_PAYLOAD_BYTES:
         raise ValueError('invalid realtime payload size')
     version, schema_id, source_id, count, epoch, seq, bitmap_size, flags, body_size = ENVELOPE.unpack_from(payload)
     columns = _schema(source_id)
+    if source_id < 6 and len(payload) > MAX_PAYLOAD_BYTES:
+        raise ValueError('legacy payload limit')
     if version != 1 or schema_id != SOURCES[source_id][1] or count != len(columns):
         raise ValueError('realtime schema mismatch')
     if flags or bitmap_size != (count + 7) // 8 or len(payload) != ENVELOPE.size + bitmap_size + body_size:
@@ -112,17 +116,19 @@ def decode(payload):
         raise ValueError('realtime bitmap padding')
     offset = ENVELOPE.size + bitmap_size
     values = []
-    for i, (_, kind) in enumerate(columns):
+    for i, (name, kind) in enumerate(columns):
         if bitmap[i // 8] & (1 << (i % 8)):
             values.append(None)
             continue
-        size = 2 if kind in ('SYMBOL', 'STRING') else NUMBERS[kind].size
+        raw_field = source_id >= 6 and name == 'raw_bits'
+        size = (4 if raw_field else 2) if kind in ('SYMBOL', 'STRING') else NUMBERS[kind].size
         if offset + size > len(payload):
             raise ValueError('truncated realtime value')
         if kind in ('SYMBOL', 'STRING'):
-            size = struct.unpack_from('<H', payload, offset)[0]
-            offset += 2
-            if size > MAX_STRING_BYTES or offset + size > len(payload):
+            size = struct.unpack_from('<I' if raw_field else '<H', payload, offset)[0]
+            offset += 4 if raw_field else 2
+            limit = RAW_BITS_BYTES if raw_field else MAX_STRING_BYTES
+            if size > limit or offset + size > len(payload):
                 raise ValueError('invalid realtime string length')
             value = bytes(payload[offset:offset + size]).decode('utf-8', errors='strict')
         else:

@@ -26,6 +26,7 @@ class Connection:
         on_disconnected: Callable,
         heartbeat_interval: float = 20.0,
         auto_reconnect: bool = True,
+        realtime_max_payload: int = 16384,
     ):
         self._host = host
         self._port = port
@@ -33,6 +34,9 @@ class Connection:
         self._on_disconnected = on_disconnected
         self._heartbeat_interval = heartbeat_interval
         self._auto_reconnect = auto_reconnect
+        if realtime_max_payload not in (16384, 1024 * 1024):
+            raise ValueError('invalid realtime transport limit')
+        self._realtime_max_payload = realtime_max_payload
 
         self._sock: Optional[socket.socket] = None
         self._send_lock = threading.Lock()
@@ -219,7 +223,7 @@ class Connection:
                         return
 
                     if 0x60 <= msg_type <= 0x64 and (
-                        (msg_type == 0x63 and (not symbol_id or not 32 <= payload_len <= 16384))
+                        (msg_type == 0x63 and (not symbol_id or not 32 <= payload_len <= self._realtime_max_payload))
                         or (msg_type != 0x63 and (symbol_id or payload_len > 632))
                     ):
                         self._handle_disconnect("invalid realtime frame header", sock)

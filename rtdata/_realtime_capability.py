@@ -10,7 +10,9 @@ from ._realtime_schema import REGISTRY_SHA256, SCHEMA_HASHES, SOURCES
 OFFER, ACK, COMMIT, SNAPSHOT, SOURCE_STATUS = range(0x60, 0x65)
 TIMEOUT_MS = 1000
 MAX_PAYLOAD = 16384
+EXTENDED_PAYLOAD = 1024 * 1024
 SOURCE_MASK = 0x1F
+EXTENDED_SOURCE_MASK = 0x7F
 _CAP = struct.Struct('<HBBQIHHI32s')
 _SCHEMA = struct.Struct('<HH32s')
 _STATUS = struct.Struct('<HHQQI')
@@ -60,8 +62,8 @@ class Capability:
 
     def encode(self):
         if (self.role not in tuple(Role) or not _uint(self.nonce, 64) or not self.nonce
-                or not _uint(self.max_payload, 32) or not 64 <= self.max_payload <= MAX_PAYLOAD
-                or not _uint(self.sources, 32) or self.sources & ~SOURCE_MASK
+                or not _uint(self.max_payload, 32) or not 64 <= self.max_payload <= EXTENDED_PAYLOAD
+                or not _uint(self.sources, 32) or self.sources & ~EXTENDED_SOURCE_MASK
                 or type(self.registry) is not bytes or len(self.registry) != 32
                 or type(self.schemas) is not tuple or len(self.schemas) > 16
                 or (self.sources == 0) != (not self.schemas)):
@@ -132,7 +134,7 @@ class Status:
 
     def mask(self):
         if (not _uint(self.nonce, 64) or not self.nonce or not _uint(self.revision, 64)
-                or not self.revision or type(self.entries) is not tuple or not 1 <= len(self.entries) <= 5):
+                or not self.revision or type(self.entries) is not tuple or not 1 <= len(self.entries) <= 7):
             raise ValueError('invalid realtime source status')
         mask, previous = 0, 0
         for s in self.entries:
@@ -152,10 +154,10 @@ class Status:
 
     @classmethod
     def decode(cls, payload):
-        if not 40 <= len(payload) <= 104:
+        if not 40 <= len(payload) <= 136:
             raise ValueError('invalid status length')
         version, count, nonce, revision, reserved = _STATUS.unpack_from(payload)
-        if version != 1 or reserved or not 1 <= count <= 5 or len(payload) != 24 + 16 * count:
+        if version != 1 or reserved or not 1 <= count <= 7 or len(payload) != 24 + 16 * count:
             raise ValueError('invalid status header')
         entries = []
         for i in range(count):
