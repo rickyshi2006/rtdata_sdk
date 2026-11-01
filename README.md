@@ -1,9 +1,9 @@
 # rtdata SDK
 
 `rtdata` 是用于实时行情、历史 K 线和财务数据查询的 Python SDK。基础功能仅依赖
-Python 标准库；History V2 高速历史流可选用 Zstandard。
+History V2 列式压缩历史流默认开启，普通安装包含 Zstandard。
 
-当前版本：**0.3.5**。
+当前待发布版本：**0.3.6**。
 
 实时协议默认 `auto`：升级后原有 `API(token=...)`、`RtdataClient(token=...)` 和订阅代码
 无需增加参数，即可与支持全字段的服务端自动协商；旧服务端仍可回退到六字段协议。
@@ -18,7 +18,7 @@ V2快照只读，NULL保留为None；自行修改Quote或按旧dataclass导出�
 - 自动心跳、自动重连和订阅恢复
 - 使用服务发现时默认声明安全 session rehome 能力：故障转移后可回到账号首选节点
 - 实时行情采用“最新值优先”的快照流
-- History V1 兼容路径和可选的 History V2 列式压缩流
+- 默认优先 History V2 列式压缩流，保留 History V1 兼容路径
 - 本地历史分段二进制缓存，可按 `symbol + period + adjust` 缓存缺口
 - A 股、港股、美股的历史 K 线复权查询（`none` / `forward` / `backward`）
 - A 股、港股、美股财务报表、TTM 和财务比率查询
@@ -40,13 +40,13 @@ V2快照只读，NULL保留为None；自行修改Quote或按旧dataclass导出�
 ### 安装 wheel
 
 ```bash
-pip install rtdata-0.3.5-py3-none-any.whl
+pip install rtdata-0.3.6-py3-none-any.whl
 ```
 
-需要 History V2 时安装可选依赖：
+普通安装已包含 History V2 所需的 Zstandard。旧安装命令仍兼容，无需再指定 extra：
 
 ```bash
-pip install "rtdata-0.3.5-py3-none-any.whl[history-v2]"
+pip install "rtdata-0.3.6-py3-none-any.whl[history-v2]"
 ```
 
 也可以从源码开发安装：
@@ -55,8 +55,8 @@ pip install "rtdata-0.3.5-py3-none-any.whl[history-v2]"
 pip install -e .
 ```
 
-未安装 `history-v2` 或连接端不支持 History V2 时，SDK 会自动使用兼容的 History V1；
-实时订阅、财务查询和普通历史查询仍可用。
+默认协商并优先使用 History V2；连接端不支持或协商超时时自动兼容 History V1。
+若手工跳过依赖安装且缺少 Zstandard，也只能使用 V1。
 
 ## 快速开始
 
@@ -195,25 +195,25 @@ backward_rows = api.get_kline(
 
 ### History V2
 
-History V2 需要客户端安装 `zstandard`，并在连接时显式开启能力声明和默认选择：
+History V2 默认开启，普通安装自动包含 `zstandard`，无需增加协议参数：
 
 ```python
 with rtdata.API(
     token="your_token",
     api_url="https://api.vrrv.ccwu.cc",
-    history_v2_advertise=True,
-    history_v2_default=True,
     history_cache_enabled=False,
 ) as api:
-    print(api.history_capability_state)
-    print(api.history_v2_eligible)
     rows = api.get_kline(
         "000001.SZ", period="1d", start="2025-06-02", end="2025-06-17"
     )
+    print(api.history_capability_state)
+    print(api.history_v2_eligible)
 ```
 
 `history_v2_advertise` 负责能力协商，`history_v2_default` 决定协商成功后是否优先发
-送 V2 请求。协商超时、连接端不支持或缺少 Zstandard 时，SDK 自动回退 V1；可通过
+送 V2 请求，两者默认均为 `True`。首次回源查询会在原查询超时内等待正在进行的协商。
+显式设置 `history_v2_default=False` 可保留 V1 查询；再设置 `history_v2_advertise=False`
+可完全关闭历史能力声明。协商超时、连接端不支持或缺少 Zstandard 时，SDK 自动回退 V1；可通过
 `history_capability_state` 和 `history_capability_fallback_reason` 查看原因。
 
 ### 本地历史缓存

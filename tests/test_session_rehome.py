@@ -184,7 +184,8 @@ class SessionRehomeClientTest(unittest.TestCase):
             client._dispatch_message(
                 proto.MsgType.AUTH_RESPONSE, 0, b"\x01", 1, connection
             )
-            self.assertEqual(connection.sent, [])
+            self.assertTrue(all(decode_message(frame)[0] == proto.MsgType.CAPABILITY_OFFER
+                                for frame in connection.sent))
             self.assertEqual(len(connection.realtime_sent), 1)
             self.assertFalse(client.session_rehome_negotiated)
 

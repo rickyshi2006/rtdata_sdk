@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### 0.3.6
+
+- Enable history capability negotiation and prefer History V2 by default in both
+  public clients. Retain V1 fallback for older peers and explicit opt-out switches.
+- Include Zstandard in the standard installation; keep the `history-v2` extra
+  name compatible with existing installation scripts.
 - Wait for an already pending history capability exchange before selecting the
   first V2-enabled query protocol, within the caller's existing timeout.
 - Shut down disconnected transports before reconnect callbacks and release the

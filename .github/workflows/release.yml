@@ -33,7 +33,9 @@ jobs:
             echo "prerelease=false" >> "${GITHUB_OUTPUT}"
           fi
       - name: Test
-        run: python -m unittest discover -s tests -v
+        run: |
+          python -m pip install '.[market-time]'
+          python -m unittest discover -s tests -v
       - name: Build immutable package artifacts
         run: |
           python -m pip install --upgrade build
@@ -45,7 +47,7 @@ jobs:
           WHEEL="$(find dist -maxdepth 1 -type f -name '*.whl' -print -quit)"
           test -n "${WHEEL}"
           python -m venv /tmp/rtdata-release-test
-          /tmp/rtdata-release-test/bin/pip install "${WHEEL}[history-v2]"
+          /tmp/rtdata-release-test/bin/pip install "${WHEEL}"
           cd /tmp
           /tmp/rtdata-release-test/bin/python - "${EXPECTED_VERSION}" <<'PY'
           import inspect
@@ -60,6 +62,8 @@ jobs:
           assert Path(rtdata.__file__).is_relative_to(Path(sys.prefix))
           for factory in (rtdata.RtdataClient, rtdata.API):
               assert inspect.signature(factory).parameters['realtime_protocol'].default == 'auto'
+              assert inspect.signature(factory).parameters['history_v2_advertise'].default is True
+              assert inspect.signature(factory).parameters['history_v2_default'].default is True
           assert zstd_available()
           assert HistoryV2RequestState is not None
           print(f"verified rtdata {rtdata.__version__} with History V2")

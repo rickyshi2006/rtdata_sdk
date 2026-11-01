@@ -53,9 +53,10 @@ class HistoryCapabilityRuntimeTest(unittest.TestCase):
         self.addCleanup(client.close)
         return client
 
-    def test_default_disabled_sends_no_extra_message(self):
+    def test_explicitly_disabled_sends_no_extra_message(self):
         connection = FakeConnection()
-        client = self.make_client(connection)
+        client = self.make_client(connection, history_v2_advertise=False,
+                                  history_v2_default=False)
 
         client._dispatch_message(proto.MsgType.AUTH_RESPONSE, 0, b"\x01", 1)
 
@@ -63,6 +64,17 @@ class HistoryCapabilityRuntimeTest(unittest.TestCase):
         self.assertEqual(len(connection.realtime_sent), 1)
         self.assertEqual(client.history_capability_state, "disabled")
         self.assertFalse(client.history_v2_eligible)
+
+    def test_defaults_advertise_and_select_v2_after_ack(self):
+        connection = FakeConnection()
+        client = self.make_client(connection)
+        client._dispatch_message(proto.MsgType.AUTH_RESPONSE, 0, b"\x01", 1)
+        self.assertEqual(decode_message(connection.sent[0])[0],
+                         proto.MsgType.CAPABILITY_OFFER)
+        self.assertEqual(client.history_capability_state, "waiting_ack")
+        ack = capabilities.v2_capabilities(capabilities.CapabilityRole.CLOUD).encode()
+        client._dispatch_message(proto.MsgType.CAPABILITY_ACK, 0, ack, 1)
+        self.assertIsNotNone(client._select_history_v2_request()[0])
 
     def test_auth_success_sends_offer_and_accepts_valid_ack(self):
         connection = FakeConnection()
