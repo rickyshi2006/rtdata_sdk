@@ -85,6 +85,58 @@ class DisconnectingEvent:
 
 
 class ReconnectStateMachineTest(unittest.TestCase):
+    def test_disconnect_shuts_down_before_notifying_reconnect(self):
+        entered = threading.Event()
+        stopped = threading.Event()
+
+        class BlockingSocket:
+            def recv(self):
+                entered.set()
+                stopped.wait(1)
+
+            def shutdown(self, how):
+                self.how = how
+                stopped.set()
+
+            def close(self):
+                pass
+
+        sock = BlockingSocket()
+        receiver = threading.Thread(target=sock.recv)
+        receiver.start()
+        self.assertTrue(entered.wait(1))
+        observed = []
+        connection = Connection("127.0.0.1", 0, lambda *_: None,
+                                lambda _: observed.append(stopped.is_set()),
+                                auto_reconnect=False)
+        connection._sock = sock
+        connection._connected = True
+        try:
+            connection._handle_disconnect("requested reconnect", sock)
+            self.assertEqual(observed, [True])
+            self.assertEqual(sock.how, socket.SHUT_RDWR)
+        finally:
+            stopped.set()
+            receiver.join(1)
+            connection.close()
+
+    def test_client_close_releases_transport_before_callback_join(self):
+        client = RtdataClient(token="test", async_callbacks=False)
+        connection = FakeConnection()
+        client._conn = connection
+        joined = []
+
+        class CallbackThread:
+            def is_alive(self):
+                return True
+
+            def join(self, timeout):
+                joined.append(not connection.connected)
+
+        client._callback_thread = CallbackThread()
+        client.close()
+        self.assertEqual(joined, [True])
+
     def test_connect_does_not_wait_for_symbol_map_when_cache_is_valid(self):
         client = RtdataClient(
             token="test",

@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Wait for an already pending history capability exchange before selecting the
+  first V2-enabled query protocol, within the caller's existing timeout.
+- Shut down disconnected transports before reconnect callbacks and release the
+  transport before waiting for user callback threads during close.
+- Preserve optional negotiation timeout fallback and single-session semantics;
+  closing a local socket is not an acknowledgement of remote session release.
+
 ## 0.3.5 - 2026-10-12
 
 - `RtdataClient` 和 `API` 的实时协议默认值为 `auto`。升级后无需新增参数，

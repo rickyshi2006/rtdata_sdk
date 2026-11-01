@@ -286,6 +286,12 @@ class Connection:
             sock = self._sock
             self._sock = None
         if sock:
+            # close() alone can leave a socket alive in another thread's recv.
+            # Send FIN/wake recv before notifying callers or reconnecting.
+            try:
+                sock.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
             try:
                 sock.close()
             except Exception:
@@ -390,6 +396,10 @@ class Connection:
                         sock = self._sock
                         self._sock = None
                         if sock:
+                            try:
+                                sock.shutdown(socket.SHUT_RDWR)
+                            except OSError:
+                                pass
                             try:
                                 sock.close()
                             except Exception:

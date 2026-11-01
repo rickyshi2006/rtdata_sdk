@@ -402,12 +402,13 @@ class RtdataClient(RealtimeClientMixin):
         self._history_capability.reset("closed")
         self._session_capability.reset("closed")
         self._callback_stop.set()
-        if (self._callback_thread and self._callback_thread.is_alive()
-                and self._callback_thread is not threading.current_thread()):
-            self._callback_thread.join(timeout=3)
+        # Release transport before waiting for slow user callbacks.
         if self._conn:
             self._conn.close()
             self._conn = None
+        if (self._callback_thread and self._callback_thread.is_alive()
+                and self._callback_thread is not threading.current_thread()):
+            self._callback_thread.join(timeout=3)
         self._stop_history_v2_worker()
 
     def __enter__(self):
@@ -774,6 +775,19 @@ class RtdataClient(RealtimeClientMixin):
         conn = self._conn
         if conn is None or not conn.connected:
             raise ConnectionError("Not connected")
+
+        deadline = time.monotonic() + timeout
+        generation = conn.generation
+        capability_generation = self._history_capability.snapshot().generation
+        if self._history_capability.default_enabled:
+            self._history_capability.wait_until_settled(timeout)
+            timeout = deadline - time.monotonic()
+            if (not self._authenticated or self._conn is not conn or not conn.connected
+                    or conn.generation != generation
+                    or self._history_capability.snapshot().generation != capability_generation):
+                raise DisconnectedError("Connection changed while negotiating history")
+            if timeout <= 0:
+                raise QueryTimeoutError(f"History query timeout for {symbol}")
 
         symbol_id = self._symbol_map.code_to_id(symbol) or 0
         request_id = self._alloc_request_id()

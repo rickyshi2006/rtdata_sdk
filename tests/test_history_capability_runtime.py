@@ -174,6 +174,12 @@ class HistoryCapabilityRuntimeTest(unittest.TestCase):
             client.history_capability_fallback_reason,
             "ack_timeout",
         )
+        ack = capabilities.v2_capabilities(capabilities.CapabilityRole.CLOUD).encode()
+        self.assertFalse(client._history_capability.handle_ack(ack))
+        self.assertFalse(client.history_v2_eligible)
+        start = time.monotonic()
+        client._history_capability.wait_until_settled(1)
+        self.assertLess(time.monotonic() - start, 0.1)
 
     def test_reconnect_resets_resends_and_ignores_old_generation_ack(self):
         first_connection = FakeConnection(generation=1)

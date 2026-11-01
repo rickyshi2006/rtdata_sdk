@@ -1,6 +1,7 @@
 import queue
 import struct
 import threading
+import time
 import unittest
 from unittest import mock
 
@@ -160,6 +161,46 @@ class HistoryV2ClientFlowTest(unittest.TestCase):
         self.assertGreater(update.grant_bytes, protocol.OUTER_HEADER_SIZE)
         self.assertFalse(connection.sent_frames(wire.MsgType.HISTORY_CANCEL))
         client.close()
+
+    def test_first_query_waits_for_pending_ack_instead_of_racing_to_v1(self):
+        client, connection = self.make_client()
+        self.addCleanup(client.close)
+        client._history_capability.begin_offer(lambda _: True)
+        ack = capabilities.v2_capabilities(capabilities.CapabilityRole.CLOUD).encode()
+        timer = threading.Timer(0.05, client._history_capability.handle_ack, args=(ack,))
+        timer.start()
+        try:
+            with mock.patch.object(client._symbol_map, "code_to_id", return_value=9001), \
+                    mock.patch.object(codec, "decompress_zstd", return_value=self.raw):
+                rows = client._perform_history_query("TEST.US", "1m", 0, 0, 5000, 1)
+            self.assertEqual(len(rows), 3)
+            request = connection.sent_frames(wire.MsgType.HISTORY_REQUEST)[0]
+            protocol.RequestOptions.decode(request[-protocol.REQUEST_OPTIONS_STRUCT.size:])
+        finally:
+            timer.join()
+
+    def test_negotiation_wait_uses_query_budget_and_sends_no_expired_request(self):
+        client, connection = self.make_client()
+        self.addCleanup(client.close)
+        client._history_capability.begin_offer(lambda _: True)
+        start = time.monotonic()
+        with self.assertRaises(QueryTimeoutError):
+            client._perform_history_query("TEST.US", "1m", 0, 0, 5000, 0.03)
+        self.assertLess(time.monotonic() - start, 0.5)
+        self.assertEqual(connection.sent_frames(wire.MsgType.HISTORY_REQUEST), [])
+
+    def test_disconnect_wakes_pending_negotiation_without_sending(self):
+        client, connection = self.make_client()
+        self.addCleanup(client.close)
+        client._history_capability.begin_offer(lambda _: True)
+        timer = threading.Timer(0.03, client.close)
+        timer.start()
+        try:
+            with self.assertRaisesRegex(Exception, "Connection changed"):
+                client._perform_history_query("TEST.US", "1m", 0, 0, 5000, 1)
+            self.assertEqual(connection.sent_frames(wire.MsgType.HISTORY_REQUEST), [])
+        finally:
+            timer.join()
 
     def test_public_range_encodes_same_half_open_bounds_in_v2(self):
         client, connection = self.make_client(respond=False)
