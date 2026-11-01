@@ -30,6 +30,29 @@ These options are accepted by both constructors. `subscribe()` is unchanged.
 `wait_for_quote()` does not subscribe implicitly. A successful subscription or
 negotiation does not mean a first quote has arrived.
 
+## Additional markets
+
+On a gateway advertising the additional market schemas, pass
+`realtime_futu_markets=True` to `API` or `RtdataClient`. This opt-in adds
+`overseas_futures` (schema 4) and `crypto` (schema 5), including ten-level
+books, signed 64-bit quantities and source quantity precision fields.
+Keep the default `False` when connecting to older gateways: their original
+capability parser does not understand the additional market identifiers.
+The five existing categories and their field definitions are unchanged.
+
+`raw_bits` is a JSON string mapping source field-group numbers to hex-encoded
+protobuf bytes. It preserves unnamed source fields without inventing names or
+units. Missing named fields remain `None`; this includes fields unavailable
+on a particular market. Book quantities preserve source integers; consult
+`book_volume_precision` before displaying fractional units. The raw field is
+bounded at 512 KiB, and the extended row at a negotiated maximum of 1 MiB;
+oversized rows are rejected, not silently truncated.
+
+Historical naive times for `.SGX`, `.HKFE`, `.OSE`, `.BMD`, `.CME`, `.CBOT`,
+`.CBOE`, `.NYMEX` and `.COMEX` use their market timezone, including DST.
+Confirmed crypto suffixes, `.CFBM` and `.FX` use UTC. An aware datetime or
+UTC millisecond value always retains its original instant.
+
 ## Fields and compatibility
 
 Extended quotes are read-only `Quote` instances. Available fields can be read

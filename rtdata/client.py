@@ -108,6 +108,7 @@ class RtdataClient(RealtimeClientMixin):
         session_rehome_advertise: bool = True,
         session_capability_ack_timeout: float = 1.0,
         realtime_protocol: str = 'auto',
+        realtime_futu_markets: bool = False,
     ):
         self._token = token
         self._host = host
@@ -174,7 +175,7 @@ class RtdataClient(RealtimeClientMixin):
 
         self._quote_cache: Dict[str, Quote] = {}
         self._quote_cache_lock = threading.Lock()
-        self._init_realtime(realtime_protocol)
+        self._init_realtime(realtime_protocol, realtime_futu_markets)
 
         self._next_request_id = 1
         self._request_id_lock = threading.Lock()
@@ -268,6 +269,7 @@ class RtdataClient(RealtimeClientMixin):
             port=self._port,
             on_message=self._dispatch_message,
             on_disconnected=self._handle_disconnected,
+            realtime_max_payload=self._realtime.local.max_payload,
             heartbeat_interval=self._heartbeat_interval,
             auto_reconnect=self._auto_reconnect,
         )

@@ -10,6 +10,15 @@ _MIN_MS = -(1 << 63)
 _MAX_MS = (1 << 63) - 1
 _CHINA_SUFFIXES = {'SH', 'SZ', 'BJ', 'SHF', 'CFE', 'CZC', 'DCE', 'INE', 'GFE'}
 _CHINA_EXCHANGES = {'SSE', 'SZSE', 'BSE', 'SHFE', 'CFFEX', 'CZCE', 'DCE', 'INE', 'GFEX'}
+_FUTURES_ZONES = {
+    'CME': 'America/Chicago', 'CBOT': 'America/Chicago', 'CBOE': 'America/Chicago',
+    'NYMEX': 'America/New_York', 'COMEX': 'America/New_York',
+    'HKFE': 'Asia/Hong_Kong', 'SGX': 'Asia/Singapore',
+    'OSE': 'Asia/Tokyo', 'BMD': 'Asia/Kuala_Lumpur',
+}
+_UTC_FEEDS = {'CRYPTO', 'BITFLYER', 'BITFINEX', 'BITSTAMP', 'BTCTURK', 'GEMINI',
+              'HUOBI', 'KUCOIN', 'LBANK', 'OKX', 'BINANCE', 'BINANCEUS',
+              'HASHKEY', 'COINBASE', 'BITGO', 'CFBM', 'FX'}
 
 
 def market_zone(symbol: str) -> ZoneInfo:
@@ -18,6 +27,12 @@ def market_zone(symbol: str) -> ZoneInfo:
         return ZoneInfo('Asia/Shanghai')
     if suffix == 'HK' or symbol.startswith('HKEX.'):
         return ZoneInfo('Asia/Hong_Kong')
+    if suffix in _FUTURES_ZONES:
+        return ZoneInfo(_FUTURES_ZONES[suffix])
+    if suffix in _UTC_FEEDS:
+        return ZoneInfo('UTC')
+    if suffix in {'CCDDEX', 'CCPT', 'CCPRINCA'}:
+        raise ValueError(f'Unconfirmed market for {symbol!r}; use UTC milliseconds or aware datetime')
     if re.fullmatch(r'[A-Za-z][A-Za-z0-9.\-]{0,31}', symbol):
         return ZoneInfo('America/New_York')
     raise ValueError(f'Unknown market for {symbol!r}; use UTC milliseconds or aware datetime')

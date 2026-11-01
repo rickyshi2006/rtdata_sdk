@@ -193,12 +193,12 @@ class RealtimeCapabilityTests(unittest.TestCase):
                     decoder(payload[:size])
             with self.assertRaises(ValueError):
                 decoder(payload + b'\0')
-        for offset, value in ((0, 2), (2, 9), (3, 1), (16, 17), (18, 1), (20, 32), (92, 1)):
+        for offset, value in ((0, 2), (2, 9), (3, 1), (16, 17), (18, 1), (20, 128), (92, 1)):
             bad = bytearray(cap)
             bad[offset] = value
             with self.assertRaises(ValueError):
                 c.Capability.decode(bad)
-        for offset, value in ((0, 2), (2, 0), (20, 1), (24, 6), (26, 2), (28, 6)):
+        for offset, value in ((0, 2), (2, 0), (20, 1), (24, 8), (26, 2), (28, 6)):
             bad = bytearray(status)
             bad[offset] = value
             with self.assertRaises(ValueError):

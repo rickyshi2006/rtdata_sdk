@@ -18,8 +18,10 @@ logger = logging.getLogger(__name__)
 
 
 class RealtimeClientMixin:
-    def _init_realtime(self, mode):
-        self._realtime = cap.Session(cap.Role.SDK, cap.Role.CLOUD, mode)
+    def _init_realtime(self, mode, futu_markets=False):
+        self._realtime = cap.Session(cap.Role.SDK, cap.Role.CLOUD, mode,
+                                     cap.EXTENDED_SOURCE_MASK if futu_markets else cap.SOURCE_MASK,
+                                     cap.EXTENDED_PAYLOAD if futu_markets else cap.MAX_PAYLOAD)
         self._realtime_lock = threading.RLock()
         self._realtime_changed = threading.Condition(self._realtime_lock)
         self._realtime_connection = None
@@ -45,6 +47,8 @@ class RealtimeClientMixin:
         states = {s.id: s for s in session.states}
         tables = {}
         for sid, (table, schema) in SOURCES.items():
+            if not self._realtime.local.sources & cap.source_bit(sid):
+                continue
             state = states.get(sid)
             tables[table] = RealtimeTableStatus(table, schema,
                 bool(state and state.ready), state.reason.name.lower() if state else
@@ -97,7 +101,7 @@ class RealtimeClientMixin:
             except Exception:
                 logger.exception('Realtime error callback failed')
 
-    def _invalidate_realtime_locked(self, mask=cap.SOURCE_MASK, all_quotes=False):
+    def _invalidate_realtime_locked(self, mask=cap.EXTENDED_SOURCE_MASK, all_quotes=False):
         with self._quote_cache_lock:
             for code, quote in list(self._quote_cache.items()):
                 if all_quotes or quote.source_id is None or mask & cap.source_bit(quote.source_id):

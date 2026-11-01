@@ -19,7 +19,7 @@ def fixture(source_id, nulls=False):
             value = None
         elif kind == 'DOUBLE':
             value = 1.123456789012345 + i
-        elif kind == 'LONG':
+        elif kind in ('LONG', 'TIMESTAMP'):
             value = (1 << 53) + i + 1
         elif kind == 'INT':
             value = -(1 << 31) if i % 2 else (1 << 31) - 1
