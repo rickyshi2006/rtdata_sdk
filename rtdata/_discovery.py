@@ -6,6 +6,7 @@
 import json
 import ssl
 import logging
+import time
 from typing import Optional, Tuple, Dict
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
@@ -28,10 +29,14 @@ def _make_ssl_context():
 def _urlopen_with_retry(req, timeout, max_retries=2):
     """带 SSL 重试的 urlopen"""
     ctx = _make_ssl_context()
+    deadline = time.monotonic() + timeout
     last_err = None
     for i in range(max_retries + 1):
         try:
-            return urlopen(req, timeout=timeout, context=ctx)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise URLError('Discovery request timed out')
+            return urlopen(req, timeout=remaining, context=ctx)
         except URLError as e:
             if isinstance(e.reason, ssl.SSLError) and i < max_retries:
                 logger.debug(f"SSL error (attempt {i+1}), retrying...")
@@ -57,19 +62,35 @@ def discover_endpoint(api_url: str, token: str,
         headers['X-Session-Handoff'] = '1'
     body = json.dumps(request_body).encode('utf-8')
     req = Request(url, data=body, method='POST', headers=headers)
+    deadline = time.monotonic() + timeout
     try:
-        with _urlopen_with_retry(req, timeout) as resp:
-            data = json.loads(resp.read().decode('utf-8'))
-            logger.debug(f"Discovery response received: "
-                        f"version={data.get('symbol_map_version')}, "
-                        f"symbols={data.get('symbol_count')}")
-            return data
+        for attempt in range(4):
+            try:
+                with _urlopen_with_retry(req, max(0, deadline - time.monotonic())) as resp:
+                    data = json.loads(resp.read().decode('utf-8'))
+                    logger.debug(f"Discovery response received: "
+                                f"version={data.get('symbol_map_version')}, "
+                                f"symbols={data.get('symbol_count')}")
+                    return data
+            except HTTPError as e:
+                # FIN delivery and session release can lag behind local close.
+                # Retry admission, never bypass or replace the existing session.
+                if e.code != 409 or target_node_id or attempt == 3:
+                    raise
+                delay = 0.5 * (2 ** attempt)
+                if deadline - time.monotonic() <= delay:
+                    raise
+                e.close()
+                logger.debug('Session still active; retrying discovery admission')
+                time.sleep(delay)
     except HTTPError as e:
         body_text = ''
         try:
             body_text = e.read().decode('utf-8', errors='replace')
         except Exception:
             pass
+        finally:
+            e.close()
         if e.code == 401:
             raise DiscoveryError(f"Authentication failed: {body_text}") from e
         raise DiscoveryError(
