@@ -57,7 +57,8 @@ jobs:
           assert Path(rtdata.__file__).is_relative_to(Path(sys.prefix))
           for factory in (rtdata.RtdataClient, rtdata.API):
               assert inspect.signature(factory).parameters['realtime_protocol'].default == 'auto'
-              assert 'realtime_futu_markets' not in inspect.signature(factory).parameters
+              assert all(p.kind != inspect.Parameter.VAR_KEYWORD
+                         for p in inspect.signature(factory).parameters.values())
               assert inspect.signature(factory).parameters['history_v2_advertise'].default is True
               assert inspect.signature(factory).parameters['history_v2_default'].default is True
           assert zstd_available()

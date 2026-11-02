@@ -28,24 +28,16 @@ def extended_row(source, sequence=1):
 
 
 class ExtendedRealtimeTest(unittest.TestCase):
-    def test_deprecated_overrides_keep_existing_calls_compatible(self):
-        with tempfile.TemporaryDirectory() as directory:
-            for factory in (API, RtdataClient):
-                for enabled, mask in ((False, 31), (True, 127)):
-                    with self.assertWarns(DeprecationWarning):
-                        client = factory('test', symbol_cache_dir=directory,
-                                         history_cache_enabled=False, realtime_futu_markets=enabled)
-                    try:
-                        state = client._client if isinstance(client, API) else client
-                        self.assertEqual(state._realtime.local.sources, mask)
-                        self.assertEqual(cap.intersection(cap.supported(cap.Role.CLOUD), state._realtime.local).sources, 31)
-                    finally:
-                        client.close()
+    def test_public_constructors_only_accept_explicit_parameters(self):
+        for factory in (API, RtdataClient):
+            parameters = inspect.signature(factory).parameters
+            self.assertFalse(any(p.kind == inspect.Parameter.VAR_KEYWORD
+                                 for p in parameters.values()))
+            self.assertEqual(parameters['realtime_protocol'].default, 'auto')
 
     def test_public_defaults_negotiate_all_markets_without_provider_option(self):
         with tempfile.TemporaryDirectory() as directory:
             for factory in (API, RtdataClient):
-                self.assertNotIn('realtime_futu_markets', inspect.signature(factory).parameters)
                 public = factory('test', symbol_cache_dir=directory,
                                  async_callbacks=False, history_cache_enabled=False)
                 try:
@@ -99,10 +91,11 @@ class ExtendedRealtimeTest(unittest.TestCase):
 
     def test_unknown_options_still_fail(self):
         for factory in (API, RtdataClient):
-            with self.assertRaises(TypeError):
-                factory('test', realtime_typo=True)
-            with self.assertRaises(TypeError):
-                factory('test', realtime_futu_markets='yes')
+            for name in ('realtime_typo', 'compat_options', 'provider', 'market_override'):
+                for value in (True, False, 'yes'):
+                    with self.subTest(factory=factory.__name__, name=name, value=value):
+                        with self.assertRaisesRegex(TypeError, 'unexpected keyword argument'):
+                            factory('test', **{name: value})
 
     def test_new_schema_full_depth_precision_and_nulls(self):
         for source, schema, code in ((6, 4, 'CNmain.SGX'), (7, 5, 'BTCUSDT.BINANCE')):

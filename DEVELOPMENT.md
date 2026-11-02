@@ -60,3 +60,6 @@ Do not publish service implementation details, storage technology, internal
 resource names, deployment topology, machine identifiers or operational reports.
 Use market categories and synthetic endpoints in examples and tests. Keep
 protocol numeric identifiers stable when changing client-facing labels.
+Use provider-neutral module, constant and test names as well. Constructors
+accept only explicit supported parameters, not hidden provider-selection
+keywords. Schema naming changes must preserve field order, types and wire hashes.

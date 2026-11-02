@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### 0.3.8
+
+- Use provider-neutral names for internal extended-market schemas without
+  changing fields, schema identities or wire encoding.
+- Remove obsolete provider-specific constructor keywords and their compatibility
+  handler. Existing callers using these keywords must remove them; unsupported
+  keywords now raise TypeError. No replacement setting is needed.
+- Preserve automatic all-market negotiation, old-server fallback and explicit
+  protocol modes. Data routing remains a server responsibility.
+
 ### 0.3.7
 
 - Automatically negotiate V2 full fields for every market advertised at login,

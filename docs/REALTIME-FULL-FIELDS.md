@@ -32,8 +32,9 @@ negotiation does not mean a first quote has arrived.
 
 ## Additional markets
 
-Version 0.3.7 automatically includes every supported market advertised by the
-connected server, including `overseas_futures` (schema 4) and `crypto` (schema 5).
+Since version 0.3.7, the SDK automatically includes every supported market
+advertised by the connected server, including `overseas_futures` (schema 4)
+and `crypto` (schema 5).
 No market-enable or provider-selection argument is needed. Server-side routing
 selects the data provider; client capability negotiation only selects the format.
 The additional schemas support up to ten book levels, signed 64-bit quantities
@@ -43,8 +44,10 @@ The successful login response may advertise supported market IDs and frame
 limits. These are re-evaluated on every connection. Without this metadata, the
 SDK sends the original five-category offer understood by older strict parsers;
 servers without V2 support retain six-field fallback. Existing category field
-definitions and schema identities are unchanged. Obsolete provider-specific
-keyword arguments are accepted only for backward compatibility and deprecated.
+definitions and schema identities are unchanged. Since version 0.3.8, obsolete
+provider-specific constructor keywords are no longer accepted. Remove them
+from existing calls; no replacement argument is needed. Unsupported constructor
+keywords raise `TypeError`. Explicit `realtime_protocol` modes remain supported.
 
 `raw_bits` is a JSON string mapping source field-group numbers to hex-encoded
 protobuf bytes. It preserves unnamed source fields without inventing names or

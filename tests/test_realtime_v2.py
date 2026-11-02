@@ -1,3 +1,4 @@
+import hashlib
 import math
 from pathlib import Path
 import struct
@@ -38,6 +39,17 @@ def replace(snap, **changes):
 
 
 class RealtimeV2Test(unittest.TestCase):
+    def test_extended_market_wire_identity_is_stable(self):
+        expected = {
+            (6, False): '88368a4347475ced695be58e899e3eb0853949ac92809729350d7973daaa8f6d',
+            (6, True): '0507b6dd19f1409a3ecacd2e0aeed66ebfacb59c3a01ac2f5a766ae0861c8d0c',
+            (7, False): '71e58563290bf3e2e8cddedca3fc84f5b0a83a54a749c24e7e995514a739e38b',
+            (7, True): '8d4349c504462655f3ed9060150bb46083266739f4c634ffb7159aa9d12f3d43',
+        }
+        for (source, nulls), digest in expected.items():
+            with self.subTest(source=source, nulls=nulls):
+                self.assertEqual(hashlib.sha256(rt.encode(fixture(source, nulls))).hexdigest(), digest)
+
     def test_independent_goldens_all_sources(self):
         rows = Path(__file__).with_name('fixtures').joinpath('realtime_v2.tsv').read_text().splitlines()
         self.assertEqual(len(rows), 10)
