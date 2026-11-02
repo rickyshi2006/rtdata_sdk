@@ -14,7 +14,7 @@
 - History V2 能力协商、列式压缩和 V1 自动回退
 - 安全 session rehome（故障转移后回到账号首选节点）
 
-当前版本：`0.3.6`
+当前版本：`0.3.9`
 
 ## 1.1 当前支持范围
 
@@ -38,20 +38,20 @@ pip install -e .
 ### 2.2 安装 wheel
 
 ```bash
-pip install rtdata-0.3.6-py3-none-any.whl
+pip install rtdata-0.3.9-py3-none-any.whl
 ```
 
 如已安装版本号更高的临时包，使用明确的 wheel 路径重装后重启 Python 或订阅进程：
 
 ```bash
-python -m pip install --force-reinstall --no-cache-dir ./rtdata-0.3.6-py3-none-any.whl
+python -m pip install --force-reinstall --no-cache-dir ./rtdata-0.3.9-py3-none-any.whl
 python -c "import rtdata; print(rtdata.__version__, rtdata.__file__)"
 ```
 
 普通安装已包含 Zstandard，默认优先使用 History V2。旧 extra 安装命令仍兼容：
 
 ```bash
-pip install "rtdata-0.3.6-py3-none-any.whl[history-v2]"
+pip install "rtdata-0.3.9-py3-none-any.whl[history-v2]"
 ```
 
 连接端不支持或协商超时时自动兼容 History V1，无需强制升级旧服务端。
