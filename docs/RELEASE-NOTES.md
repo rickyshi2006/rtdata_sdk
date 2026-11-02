@@ -1,4 +1,4 @@
-## v0.3.8
+## v0.3.6
 
 - 统一扩展市场 schema 的内部命名，不改变字段、schema ID、哈希及通信协议。
 - 移除已弃用的数据源专用构造参数及兼容处理；原调用如含此类参数，请直接删除，
@@ -16,7 +16,14 @@
 - 改进断线、重连和关闭时的连接资源释放。
 
 ```sh
-python -m pip install --upgrade ./rtdata-0.3.8-py3-none-any.whl
+python -m pip install --upgrade ./rtdata-0.3.6-py3-none-any.whl
 ```
 
 请使用随包 `SHA256SUMS` 校验下载文件。详见 `docs/REALTIME-FULL-FIELDS.md`。
+
+如已安装版本号更高的临时包，请显式重装本次 wheel，然后重启 Python 或订阅进程：
+
+```sh
+python -m pip install --force-reinstall --no-cache-dir ./rtdata-0.3.6-py3-none-any.whl
+python -c "import rtdata; print(rtdata.__version__, rtdata.__file__)"
+```
