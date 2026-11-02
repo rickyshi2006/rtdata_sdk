@@ -44,7 +44,7 @@ class HistoryTimeTest(unittest.TestCase):
         self.assertEqual(self.normalize(date(2025, 7, 1)), utc_ms('2025-07-01T04:00:00'))
         self.assertEqual(self.normalize(datetime(2025, 7, 1, 9, 30)), utc_ms('2025-07-01T13:30:00'))
 
-    def test_futu_new_suffixes(self):
+    def test_extended_market_suffixes(self):
         for symbol, expected in [
             ('ESmain.CME', '2025-07-01T14:30:00'),
             ('ZCmain.CBOT', '2025-07-01T14:30:00'),
@@ -82,7 +82,7 @@ class HistoryTimeTest(unittest.TestCase):
                 for value in (text, datetime.fromisoformat(text), text + '+08:00'):
                     self.assertEqual(self.normalize(value, 'CNmain.SGX'), expected)
 
-    def test_all_futu_utc_suffixes(self):
+    def test_all_extended_utc_suffixes(self):
         for suffix in ('CRYPTO', 'BITFLYER', 'BITFINEX', 'BITSTAMP', 'BTCTURK',
                        'GEMINI', 'HUOBI', 'KUCOIN', 'LBANK', 'OKX', 'BINANCE',
                        'BINANCEUS', 'HASHKEY', 'COINBASE', 'BITGO', 'CFBM', 'FX'):
@@ -91,7 +91,7 @@ class HistoryTimeTest(unittest.TestCase):
                     self.assertEqual(self.normalize(day + ' 09:30', 'TEST.' + suffix),
                                      utc_ms(day + 'T09:30'))
 
-    def test_futu_futures_winter_and_dst_boundaries(self):
+    def test_overseas_futures_winter_and_dst_boundaries(self):
         for symbol, winter_hour, summer_offset, winter_offset in (
             ('ESmain.CME', 15, '-05:00', '-06:00'),
             ('ZCmain.CBOT', 15, '-05:00', '-06:00'),
@@ -110,7 +110,7 @@ class HistoryTimeTest(unittest.TestCase):
                     self.normalize('2026-11-01T01:30' + summer_offset, symbol),
                     3600000)
 
-    def test_futu_date_only_bounds(self):
+    def test_extended_market_date_only_bounds(self):
         for symbol, day, expected_start, hours in (
             ('CNmain.SGX', '2026-10-30', '2026-10-29T16:00', 24),
             ('BTCUSDT.BINANCE', '2026-10-30', '2026-10-30T00:00', 24),
@@ -123,7 +123,7 @@ class HistoryTimeTest(unittest.TestCase):
                 self.assertEqual(self.normalize(day, symbol, is_end=True) + 1 - start,
                                  hours * 3600000)
 
-    def test_futu_explicit_instants_do_not_infer_market_zone(self):
+    def test_extended_market_explicit_instants_do_not_infer_market_zone(self):
         expected = utc_ms('2026-10-30T01:00')
         with mock.patch('rtdata._history_time.market_zone', side_effect=AssertionError('unexpected inference')):
             for symbol in ('CNmain.SGX', 'ESmain.CME', 'BTCUSDT.BINANCE', 'BTC.CCDDEX'):

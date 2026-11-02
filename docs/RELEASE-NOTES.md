@@ -1,4 +1,8 @@
-## v0.3.7
+## v0.3.8
+
+- 统一扩展市场 schema 的内部命名，不改变字段、schema ID、哈希及通信协议。
+- 移除已弃用的数据源专用构造参数及兼容处理；原调用如含此类参数，请直接删除，
+  无需替换参数。未知构造参数现在会触发 `TypeError`。
 
 - 实时行情默认自动获取扩展字段，现有连接和订阅代码无需增加参数。
 - 默认覆盖当前服务端声明的全部市场，包括海外期货和加密货币；无需选择数据源。
@@ -12,7 +16,7 @@
 - 改进断线、重连和关闭时的连接资源释放。
 
 ```sh
-python -m pip install --upgrade ./rtdata-0.3.7-py3-none-any.whl
+python -m pip install --upgrade ./rtdata-0.3.8-py3-none-any.whl
 ```
 
 请使用随包 `SHA256SUMS` 校验下载文件。详见 `docs/REALTIME-FULL-FIELDS.md`。

@@ -1,6 +1,6 @@
 """Generated realtime schema registry; do not edit."""
 from types import MappingProxyType
-from ._futu_realtime_schema import FUTU_SCHEMAS, FUTU_HASHES, FUTU_SOURCES
+from ._realtime_extended_schema import EXTENDED_SCHEMAS, EXTENDED_HASHES, EXTENDED_SOURCES
 
 REGISTRY_SHA256 = "0acc8d004af8a4a16e6a8dec97a21d222941d0877076cd1eff3c548f8efe0269"
 SCHEMA_HASHES = MappingProxyType({1: 'b626c7e17c707bf20db69c155a96cae88715dfb1e03427ce73d59b5291255a87', 2: '5ea9dc55fbbcf038943ff8018373b29f5ae87544a07e8ce6942c42b180342de5', 3: 'f34d842d61e9c60f7582ce36a18348a6139a9519a7dd7a7d1248103543d6deb5'})
@@ -116,6 +116,6 @@ SOURCES = MappingProxyType({
     4: ('us_equity', 1),
     5: ('fx', 3),
 })
-SCHEMAS = MappingProxyType({**SCHEMAS, **{key: tuple(value) for key, value in FUTU_SCHEMAS.items()}})
-SCHEMA_HASHES = MappingProxyType({**SCHEMA_HASHES, **FUTU_HASHES})
-SOURCES = MappingProxyType({**SOURCES, **FUTU_SOURCES})
+SCHEMAS = MappingProxyType({**SCHEMAS, **{key: tuple(value) for key, value in EXTENDED_SCHEMAS.items()}})
+SCHEMA_HASHES = MappingProxyType({**SCHEMA_HASHES, **EXTENDED_HASHES})
+SOURCES = MappingProxyType({**SOURCES, **EXTENDED_SOURCES})

@@ -6,7 +6,6 @@ import queue
 import secrets
 import threading
 import time
-import warnings
 from types import MappingProxyType
 
 from . import _protocol as proto
@@ -17,21 +16,6 @@ from .exceptions import RealtimeUnavailableError
 from .models import Quote, RealtimeStatus, RealtimeTableStatus
 
 logger = logging.getLogger(__name__)
-
-
-def _compat_realtime_option(options):
-    unknown = set(options) - {'realtime_futu_markets'}
-    if unknown:
-        raise TypeError('unexpected keyword argument: ' + sorted(unknown)[0])
-    if not options:
-        return None
-    value = options['realtime_futu_markets']
-    if type(value) is not bool:
-        raise TypeError('legacy realtime market option must be bool')
-    warnings.warn('Provider-specific realtime options are deprecated; omit them '
-                  'to negotiate all supported markets automatically.',
-                  DeprecationWarning, stacklevel=3)
-    return value
 
 
 def _login_realtime_capability(payload):
@@ -53,11 +37,9 @@ def _login_realtime_capability(payload):
 
 
 class RealtimeClientMixin:
-    def _init_realtime(self, mode, market_override=None):
-        self._realtime_market_override = market_override
+    def _init_realtime(self, mode):
         self._realtime = cap.Session(cap.Role.SDK, cap.Role.CLOUD, mode,
-                                     cap.SOURCE_MASK if market_override is False else cap.EXTENDED_SOURCE_MASK,
-                                     cap.MAX_PAYLOAD if market_override is False else cap.EXTENDED_PAYLOAD)
+                                     cap.EXTENDED_SOURCE_MASK, cap.EXTENDED_PAYLOAD)
         self._realtime_lock = threading.RLock()
         self._realtime_changed = threading.Condition(self._realtime_lock)
         self._realtime_connection = None
@@ -225,8 +207,7 @@ class RealtimeClientMixin:
             if self._realtime_current_locked():
                 return
             self._realtime.reset(self._realtime.generation + 1, True)
-            if self._realtime_market_override is None:
-                self._realtime.local = _login_realtime_capability(auth_payload)
+            self._realtime.local = _login_realtime_capability(auth_payload)
             self._realtime_connection = conn
             self._realtime_transport_generation = conn.generation
             self._invalidate_realtime_locked(all_quotes=True)
