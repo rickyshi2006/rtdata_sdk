@@ -101,8 +101,7 @@ class API:
 
         兼容说明:
             - 旧参数 start_time / end_time 仍可用，但不再推荐
-            - 普通 token 返回区间内最新的至多 5000 根，按时间升序；缓存同样受限
-            - 仅服务端明确授予无限制权限时自动分页获取完整区间
+            - 结果按时间升序排列，返回范围以服务端实际提供的数据为准
         """
         self._ensure_connected()
         return self._client.get_kline(
