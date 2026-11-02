@@ -242,7 +242,7 @@ class RealtimeClientTest(unittest.TestCase):
         client = self.client()
         client._dispatch_message(proto.MsgType.AUTH_RESPONSE, 0, b'\x01', 1, client._conn)
         offer = cap.Capability.decode(client._conn.sent[0][10:])
-        deadline = time.monotonic() + 2
+        deadline = time.monotonic() + cap.CLIENT_TIMEOUT_MS / 1000 + 1
         while client.realtime_status.phase != 'fallback' and time.monotonic() < deadline:
             time.sleep(.01)
         self.assertEqual(client.realtime_status.reason, 'ack_timeout')

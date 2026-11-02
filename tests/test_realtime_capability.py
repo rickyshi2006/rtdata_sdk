@@ -7,6 +7,32 @@ from rtdata import _protocol as framing
 
 
 class RealtimeCapabilityTests(unittest.TestCase):
+    def test_client_handshake_survives_retransmission_delay(self):
+        a, b = self.pair()
+        offer = a.begin(1, 9, 0)
+        a.sent(1, offer, True, 0)
+        ack = b.receive(1, c.OFFER, offer.payload, 916)
+        b.sent(1, ack, True, 916)
+        commit = a.receive(1, c.ACK, ack.payload, 1162)
+        self.assertIsNotNone(commit)
+        self.assertEqual(a.phase, 'commit_pending')
+        a.sent(1, commit, True, 1163)
+        b.receive(1, c.COMMIT, commit.payload, 2500)
+        self.assertEqual((a.phase, b.phase), ('active', 'active'))
+
+    def test_client_deadline_is_bounded_and_upstream_unchanged(self):
+        for role, budget in ((c.Role.SDK, 5000), (c.Role.PRODUCER, 1000)):
+            a, b = self.pair(role=role)
+            ack = self.transfer(a, b, a.begin(1, 9, 0), 0)
+            b.sent(1, ack, True, 0)
+            a.tick(1, budget - 1)
+            b.tick(1, budget - 1)
+            self.assertEqual((a.phase, b.phase), ('waiting_ack', 'waiting_commit'))
+            a.tick(1, budget)
+            b.tick(1, budget)
+            self.assertEqual((a.phase, b.phase), ('fallback', 'closed'))
+            self.assertIsNone(a.receive(1, c.ACK, ack.payload, budget + 1))
+
     def test_message_registration_and_unchanged_outer_frame(self):
         names = ('REALTIME_CAPABILITY_OFFER', 'REALTIME_CAPABILITY_ACK', 'REALTIME_CAPABILITY_COMMIT',
                  'REALTIME_SNAPSHOT_V2', 'REALTIME_SOURCE_STATUS')
@@ -79,11 +105,11 @@ class RealtimeCapabilityTests(unittest.TestCase):
             a, b = self.pair(mode=mode)
             ack = self.transfer(a, b, a.begin(1, 1, 0), 0)
             b.sent(1, ack, True, 0)
-            self.assertIsNone(a.receive(1, c.ACK, ack.payload, 1000))
+            self.assertIsNone(a.receive(1, c.ACK, ack.payload, c.CLIENT_TIMEOUT_MS))
             self.assertEqual(a.phase, 'fallback')
             self.assertEqual(a.reason, 'ack_timeout')
             self.assertEqual(a.format(1), 'v1' if mode == 'auto' else 'unavailable')
-            b.tick(1, 1000)
+            b.tick(1, c.CLIENT_TIMEOUT_MS)
             self.assertEqual(b.phase, 'closed')
 
     def test_generation_nonce_and_auth_gates(self):

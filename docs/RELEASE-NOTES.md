@@ -1,11 +1,6 @@
-## v0.3.9
+## v0.3.6
 
-- 普通 token 一次 `get_kline()` 最多返回请求区间内最新 5000 根，按时间升序排列。
-- 不足 5000 根时返回区间全部，不向请求起点之前补齐；缓存命中同样遵守限额。
-- 普通会话不再自动分页累计突破单次调用限额；无限制会话保留完整区间自动分页。
-- 请先升级服务端以支持最新历史选择，再安装此版本。实时订阅接口保持不变。
-
-以下为此前版本已有的功能，本版本继续保留：
+- 改进连接协商在网络延迟和重传情况下的稳定性。
 
 - 统一扩展市场 schema 的内部命名，不改变字段、schema ID、哈希及通信协议。
 - 移除已弃用的数据源专用构造参数及兼容处理；原调用如含此类参数，请直接删除，
@@ -23,14 +18,14 @@
 - 改进断线、重连和关闭时的连接资源释放。
 
 ```sh
-python -m pip install --upgrade ./rtdata-0.3.9-py3-none-any.whl
+python -m pip install --upgrade ./rtdata-0.3.6-py3-none-any.whl
 ```
 
 请使用随包 `SHA256SUMS` 校验下载文件。详见 `docs/REALTIME-FULL-FIELDS.md`。
 
-如已安装版本号更高的临时包，请显式重装本次 wheel，然后重启 Python 或订阅进程：
+如已安装同版本或版本号更高的包，请显式重装本次 wheel，然后重启 Python 或订阅进程：
 
 ```sh
-python -m pip install --force-reinstall --no-cache-dir ./rtdata-0.3.9-py3-none-any.whl
+python -m pip install --force-reinstall --no-cache-dir ./rtdata-0.3.6-py3-none-any.whl
 python -c "import rtdata; print(rtdata.__version__, rtdata.__file__)"
 ```

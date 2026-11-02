@@ -17,7 +17,7 @@ class SessionCapabilitySnapshot:
 
 
 class SessionCapabilityRuntime:
-    def __init__(self, *, advertise: bool = False, ack_timeout: float = 1.0):
+    def __init__(self, *, advertise: bool = False, ack_timeout: float = 5.0):
         if ack_timeout <= 0:
             raise ValueError("session_capability_ack_timeout must be positive")
         self.advertise = advertise

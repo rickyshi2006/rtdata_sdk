@@ -279,7 +279,7 @@ class RealtimeClientMixin:
             with self._quote_cache_lock:
                 return self._quote_cache.get(quote.symbol) is quote
 
-    def wait_for_realtime(self, timeout=2.0):
+    def wait_for_realtime(self, timeout=6.0):
         """Wait for protocol negotiation, not table readiness or a first quote."""
         deadline = time.monotonic() + timeout
         with self._realtime_changed:

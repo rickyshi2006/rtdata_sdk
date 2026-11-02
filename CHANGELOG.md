@@ -1,15 +1,8 @@
 # Changelog
 
-## 0.3.9 - 2026-11-02
-
-- Limit each standard-token history call to the newest 5000 bars within its
-  requested range, returned in ascending order, including local cache hits.
-- Only sessions explicitly granted unlimited history automatically page across
-  the full range. Missing or malformed login limits default to 5000.
-- Latest selection requires a gateway supporting the history-limit extension;
-  update the gateway before installing this SDK release.
-
 ## 0.3.6 - 2026-11-02
+
+- Improve connection negotiation resilience to network delay and retransmission.
 
 - Use provider-neutral names for internal extended-market schemas without
   changing fields, schema identities or wire encoding.

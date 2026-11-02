@@ -46,9 +46,9 @@ class API:
                  history_v2_advertise: bool = True,
                  history_v2_default: bool = True,
                  history_v2_max_block_bytes: int = 256 * 1024,
-                 history_capability_ack_timeout: float = 1.0,
+                 history_capability_ack_timeout: float = 5.0,
                  session_rehome_advertise: bool = True,
-                 session_capability_ack_timeout: float = 1.0,
+                 session_capability_ack_timeout: float = 5.0,
                  realtime_protocol: str = 'auto'):
         self._client = RtdataClient(
             token=token,
@@ -176,7 +176,7 @@ class API:
     def on_realtime_status(self):
         return self._client.on_realtime_status
 
-    def wait_for_realtime(self, timeout: float = 2.0):
+    def wait_for_realtime(self, timeout: float = 6.0):
         self._ensure_connected()
         return self._client.wait_for_realtime(timeout)
 

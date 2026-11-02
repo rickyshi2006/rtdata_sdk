@@ -9,6 +9,7 @@ from ._realtime_schema import REGISTRY_SHA256, SCHEMA_HASHES, SOURCES
 
 OFFER, ACK, COMMIT, SNAPSHOT, SOURCE_STATUS = range(0x60, 0x65)
 TIMEOUT_MS = 1000
+CLIENT_TIMEOUT_MS = 5000
 MAX_PAYLOAD = 16384
 EXTENDED_PAYLOAD = 1024 * 1024
 SOURCE_MASK = 0x1F
@@ -219,9 +220,10 @@ class Session:
         return bool(generation and generation == self.generation and self.authenticated)
 
     def _arm(self, now):
-        if not _uint(now, 64) or now > (1 << 64) - 1 - TIMEOUT_MS:
+        budget = CLIENT_TIMEOUT_MS if Role.SDK in (self.role, self.peer) else TIMEOUT_MS
+        if not _uint(now, 64) or now > (1 << 64) - 1 - budget:
             raise ValueError('invalid monotonic time')
-        self.deadline = now + TIMEOUT_MS
+        self.deadline = now + budget
 
     def _queue(self, msg_type, payload, now):
         self._arm(now)

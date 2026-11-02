@@ -50,14 +50,19 @@ Client-facing compatibility and quote behavior are documented in
 5. The release workflow rebuilds and tests wheel/sdist in clean environments,
    generates checksums, and publishes immutable GitHub Release artifacts.
 
-Published package files are never replaced in place. Fixes use a new patch
-version.
+Normally, published package files are immutable and fixes use a new patch version.
+An explicitly approved same-version consolidation must first archive the old
+artifacts outside this public repository, validate local main, regenerate all
+checksums, and verify the downloaded replacement. Document force-reinstallation
+for clients already using that version; do not silently change an installation.
 
 ## Public content
 
 Keep this repository and release notes focused on client APIs and usage.
 Do not publish service implementation details, storage technology, internal
 resource names, deployment topology, machine identifiers or operational reports.
+Keep internal account-policy implementation and rollout records out of release
+notes and public change summaries. Retain them in the private integration workspace.
 Use market categories and synthetic endpoints in examples and tests. Keep
 protocol numeric identifiers stable when changing client-facing labels.
 Use provider-neutral module, constant and test names as well. Constructors
