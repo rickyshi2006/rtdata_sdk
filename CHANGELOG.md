@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.9 - 2026-11-02
 
 - Limit each standard-token history call to the newest 5000 bars within its
   requested range, returned in ascending order, including local cache hits.
