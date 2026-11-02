@@ -14,7 +14,7 @@
 - History V2 能力协商、列式压缩和 V1 自动回退
 - 安全 session rehome（故障转移后回到账号首选节点）
 
-当前版本：`0.3.9`
+当前版本：`0.3.6`
 
 ## 1.1 当前支持范围
 
@@ -38,20 +38,20 @@ pip install -e .
 ### 2.2 安装 wheel
 
 ```bash
-pip install rtdata-0.3.9-py3-none-any.whl
+pip install rtdata-0.3.6-py3-none-any.whl
 ```
 
 如已安装版本号更高的临时包，使用明确的 wheel 路径重装后重启 Python 或订阅进程：
 
 ```bash
-python -m pip install --force-reinstall --no-cache-dir ./rtdata-0.3.9-py3-none-any.whl
+python -m pip install --force-reinstall --no-cache-dir ./rtdata-0.3.6-py3-none-any.whl
 python -c "import rtdata; print(rtdata.__version__, rtdata.__file__)"
 ```
 
 普通安装已包含 Zstandard，默认优先使用 History V2。旧 extra 安装命令仍兼容：
 
 ```bash
-pip install "rtdata-0.3.9-py3-none-any.whl[history-v2]"
+pip install "rtdata-0.3.6-py3-none-any.whl[history-v2]"
 ```
 
 连接端不支持或协商超时时自动兼容 History V1，无需强制升级旧服务端。
@@ -291,14 +291,8 @@ klines = api.get_kline(
 - 如果带时间，按精确时间截取
 - `start` 必须小于等于 `end`
 - `adjust` 支持 `none` / `forward` / `backward`
-- 普通 token 一次 `get_kline()` 最多返回请求区间内最新的 5000 根，按时间升序排列；
-  不足 5000 根返回全部，不向请求起点之前补齐，也不会自动翻页累计超过上限。
-- 例如请求 `2026-01-10` 至 `2026-06-10`，超限时保留截至结束日期的最新 5000 根；
-  第一根日期由实际交易日、周期和数据决定，不按固定天数推算。
-- 只有服务端明确授予无限制历史权限的会话才自动分页获取完整区间。
-  `timeout` 是一次调用的总查询预算，不是每页单独预算。
-- 以上限额对 `get_kline_range()` 等别名及本地缓存同样生效。
-  新的最新 N 根语义需要兼容的网关版本，请先升级网关再更新 SDK。
+- 返回结果按时间升序排列，以实际返回的数据为准。
+- `timeout` 是一次调用的总查询预算。
 
 ### 7.4 复权示例
 
@@ -364,9 +358,7 @@ klines = api.get_kline(
 
 ### 8.2 命中规则
 
-- 普通 token：缓存能证明最新后缀完整时，最多返回最新 5000 根；否则只发一次受限查询，
-  不遍历缺口追加下载，也不把旧前缀拼接到新结果。
-- 无限制 token：已有完整区间则直接返回；缺少部分区间时只回源缺失段。
+- 优先使用已验证的本地缓存；无法满足查询时向服务端请求数据。
 - 再次请求相同区间：优先读本地
 - 只有同时给出 `start` 和 `end` 时才会走这套缓存
 

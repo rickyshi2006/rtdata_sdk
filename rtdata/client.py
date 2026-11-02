@@ -105,9 +105,9 @@ class RtdataClient(RealtimeClientMixin):
         history_v2_advertise: bool = True,
         history_v2_default: bool = True,
         history_v2_max_block_bytes: int = 256 * 1024,
-        history_capability_ack_timeout: float = 1.0,
+        history_capability_ack_timeout: float = 5.0,
         session_rehome_advertise: bool = True,
-        session_capability_ack_timeout: float = 1.0,
+        session_capability_ack_timeout: float = 5.0,
         realtime_protocol: str = 'auto',
     ):
         self._token = token

@@ -20,7 +20,7 @@ ROWS = [(1793318400000 + i * 60000, 1.25, 1.5, 1.0, 1.375, 100 + i)
 
 class HistoryDefaultLoopbackTest(unittest.TestCase):
     def run_query(self, *, api=False, peer_mode='v2', options=None,
-                  missing_zstd=False, old_discovery=False):
+                  missing_zstd=False, old_discovery=False, ack_delay=0.05):
         seen = {'offers': 0, 'requests': [], 'updates': 0}
 
         def scenario(peer):
@@ -35,7 +35,7 @@ class HistoryDefaultLoopbackTest(unittest.TestCase):
                         continue
                     # Deliberately ACK after connect returns: the very first query
                     # must wait rather than pick V1 based on a pending exchange.
-                    time.sleep(0.05)
+                    time.sleep(ack_delay)
                     if peer_mode == 'invalid':
                         ack = b'invalid'
                     elif peer_mode == 'v1' or not cap.v2_eligible(offer):
@@ -123,8 +123,17 @@ class HistoryDefaultLoopbackTest(unittest.TestCase):
 
     def test_both_public_signatures_default_to_v2(self):
         for factory in (API, RtdataClient):
+            for option in ('history_capability_ack_timeout', 'session_capability_ack_timeout'):
+                self.assertEqual(inspect.signature(factory).parameters[option].default, 5.0)
             for flag in ('history_v2_advertise', 'history_v2_default'):
                 self.assertIs(inspect.signature(factory).parameters[flag].default, True)
+
+    def test_delayed_ack_first_query_still_uses_v2(self):
+        for api in (False, True):
+            with self.subTest(api=api):
+                seen = self.run_query(api=api, ack_delay=1.2)
+                self.assertEqual(seen['requests'], [2])
+                self.assertTrue(seen['eligible'])
 
     @unittest.skipUnless(codec.zstd_available(), 'Zstandard not installed')
     def test_both_public_entries_first_query_is_real_compressed_v2(self):

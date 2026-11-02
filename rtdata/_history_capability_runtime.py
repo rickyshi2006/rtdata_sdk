@@ -25,7 +25,7 @@ class HistoryCapabilityRuntime:
         advertise: bool = False,
         default_enabled: bool = False,
         max_block_bytes: int = 256 * 1024,
-        ack_timeout: float = 1.0,
+        ack_timeout: float = 5.0,
     ):
         if not capabilities.MIN_BLOCK_BYTES <= max_block_bytes <= capabilities.MAX_BLOCK_BYTES:
             raise ValueError(

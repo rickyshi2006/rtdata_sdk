@@ -3,15 +3,11 @@
 ## 当前包信息
 
 - 包名：`rtdata`
-- 当前版本：`0.3.9`
+- 当前版本：`0.3.6`
 
-本次产物版本统一为 `0.3.9`，构建验证不等于已对外发布。
+本次产物版本统一为 `0.3.6`，构建验证不等于已对外发布。
 
-## v0.3.9 变更摘要
-
-- 普通 token 单次历史调用最多返回区间内最新5000根，升序返回；缓存同样受限。
-- 仅明确授权的无限制会话自动分页获取完整区间。服务端须先升级最新历史选择能力。
-- 下列实时与历史接口功能继续保留。
+## v0.3.6 变更摘要
 
 - 默认自动获取实时扩展字段，现有连接和订阅调用无需新增参数。
 - 默认协商服务端声明支持的全部市场，包含海外期货与加密货币；无需选择数据源。
@@ -21,8 +17,9 @@
 - 历史请求默认协商并优先使用 V2，普通安装包含 Zstandard；保留旧服务端 V1 兼容。
 - 首次查询等待历史协商，关闭连接时优先释放传输资源。
 
-发布时必须创建匹配的 `v0.3.9` tag；GitHub Release 和构建产物由 release workflow
-生成，发布后的包文件不做原地替换。
+发布时必须创建匹配的 `v0.3.6` tag；GitHub Release 和构建产物由 release workflow
+生成。安装时使用随包 SHA256SUMS 校验文件；重新安装同版本包时需使用
+`--force-reinstall --no-cache-dir`，并重启 Python 进程。
 
 ## 当前支持范围
 
@@ -41,8 +38,8 @@
 
 文件：
 
-- `rtdata-0.3.9-py3-none-any.whl`
-- `rtdata-0.3.9.tar.gz`
+- `rtdata-0.3.6-py3-none-any.whl`
+- `rtdata-0.3.6.tar.gz`
 
 优先建议对外提供 `.whl`。
 
@@ -143,25 +140,25 @@ print(api.last_subscribe_rejected)
 ### 安装 wheel
 
 ```bash
-pip install rtdata-0.3.9-py3-none-any.whl
+pip install rtdata-0.3.6-py3-none-any.whl
 ```
 
 普通安装已包含 History V2 依赖，旧 extra 命令仍兼容：
 
 ```bash
-pip install "rtdata-0.3.9-py3-none-any.whl[history-v2]"
+pip install "rtdata-0.3.6-py3-none-any.whl[history-v2]"
 ```
 
 ### 安装源码包
 
 ```bash
-pip install rtdata-0.3.9.tar.gz
+pip install rtdata-0.3.6.tar.gz
 ```
 
 ### 升级安装
 
 ```bash
-pip install --upgrade rtdata-0.3.9-py3-none-any.whl
+pip install --upgrade rtdata-0.3.6-py3-none-any.whl
 ```
 
 ## 建议同时交付给客户的内容

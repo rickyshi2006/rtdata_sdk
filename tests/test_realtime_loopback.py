@@ -112,6 +112,22 @@ class Peer:
 
 
 class RealtimeLoopbackTest(unittest.TestCase):
+    def test_delayed_ack_keeps_default_and_required_clients_negotiated(self):
+        def scenario(peer):
+            sock = peer.accept()
+            time.sleep(1.2)
+            peer.negotiate(sock)
+            peer.stop.wait(5)
+
+        for mode in ('auto', 'required_v2'):
+            with self.subTest(mode=mode):
+                peer, client = self.make(scenario, mode=mode)
+                client.connect(2)
+                self.assertTrue(client.wait_for_realtime().negotiated)
+                self.assertEqual(peer.errors, [])
+                client.close()
+                peer.close()
+
     def test_reconnect_between_original_and_extended_peers(self):
         original = fixture(1, code='A.SH')
         crypto = extended_row(7)
@@ -243,6 +259,7 @@ class RealtimeLoopbackTest(unittest.TestCase):
     def test_old_server_auto_fallback_and_required_error(self):
         def scenario(peer):
             sock = peer.accept()
+            sock.settimeout(7)
             while not peer.stop.is_set():
                 kind, _, payload = read_frame(sock)
                 if kind == proto.MsgType.SUBSCRIBE_REQUEST:
@@ -254,7 +271,7 @@ class RealtimeLoopbackTest(unittest.TestCase):
         client.subscribe([fixture().fields['code']])
         self.assertEqual(client.wait_for_quote(fixture().fields['code'], 2).wire_version, 1)
         with self.assertRaisesRegex(RealtimeUnavailableError, 'ack_timeout'):
-            client.wait_for_realtime(2)
+            client.wait_for_realtime()
         self.assertEqual(peer.errors, [])
         _, required = self.make(scenario, mode='required_v2', async_callbacks=False)
         with self.assertRaisesRegex(RealtimeUnavailableError, 'ack_timeout'):
