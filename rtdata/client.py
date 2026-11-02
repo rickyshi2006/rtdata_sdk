@@ -31,6 +31,7 @@ from ._history_capability_runtime import HistoryCapabilityRuntime
 from ._session_capability_runtime import SessionCapabilityRuntime
 from . import _session_rehome_protocol as session_rehome
 from ._history_segment_cache import HistorySegmentCache
+from ._history_limits import DEFAULT_MAX_ROWS, login_history_max_rows
 from ._history_time import normalize_endpoint, market_zone, exclusive_end
 from ._history_v2_stream import HistoryV2RequestState
 from ._symbol_map import SymbolMap
@@ -156,6 +157,7 @@ class RtdataClient(RealtimeClientMixin):
         self._token_status_callbacks: List[Callable] = []
 
         self._authenticated = False
+        self._history_max_rows = DEFAULT_MAX_ROWS
         self._auth_event = threading.Event()
         self._auth_success = False
         self._auth_error = ""
@@ -243,6 +245,7 @@ class RtdataClient(RealtimeClientMixin):
     def connect(self, timeout: float = 15.0):
         self._reset_realtime('new_connection')
         self._authenticated = False
+        self._history_max_rows = DEFAULT_MAX_ROWS
         self._auth_success = False
         if self._conn is not None:
             self._abort_pending_queries(
@@ -391,6 +394,7 @@ class RtdataClient(RealtimeClientMixin):
 
     def close(self):
         self._authenticated = False
+        self._history_max_rows = DEFAULT_MAX_ROWS
         self._auth_success = False
         self._reset_realtime('closed')
         self._abort_pending_queries(
@@ -796,9 +800,11 @@ class RtdataClient(RealtimeClientMixin):
         use_history_v2 = history_v2_options is not None
         effective_max_count = (
             HISTORY_V2_PAGE_ROWS
-            if use_history_v2 and max_count == HISTORY_V1_PAGE_ROWS
+            if use_history_v2 and not self._history_max_rows and max_count == HISTORY_V1_PAGE_ROWS
             else max_count
         )
+        if self._history_max_rows:
+            effective_max_count = min(effective_max_count, self._history_max_rows)
         entry = {
             'event': threading.Event(),
             'klines': [],
@@ -844,6 +850,7 @@ class RtdataClient(RealtimeClientMixin):
             history_v2_options=(
                 history_v2_options.encode() if use_history_v2 else b''
             ),
+            latest=bool(self._history_max_rows),
         )
         if (
             conn.generation != entry['connection_generation']
@@ -948,6 +955,8 @@ class RtdataClient(RealtimeClientMixin):
     ) -> Iterator[Tuple[int, int, List[Kline]]]:
         cursor = start_ms
         while cursor < end_exclusive_ms:
+            if self._history_max_rows:
+                raise QueryError("History allowance changed during range download; retry the query")
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise QueryTimeoutError(f"History query timeout for {symbol}")
@@ -1000,6 +1009,35 @@ class RtdataClient(RealtimeClientMixin):
         if start_ms and end_ms and start_ms > end_ms:
             raise ValueError('start must be <= end')
         end_exclusive_ms = exclusive_end(end_ms) if end_ms else 0
+
+        if self._history_max_rows:
+            limit = self._history_max_rows
+            cached = []
+            if start_ms and end_ms and self._history_cache.enabled:
+                cached = self._history_cache.load_range(
+                    symbol, period, adjust, start_ms, end_exclusive_ms - 1, latest_limit=limit)
+                coverage_start = cached[0][0] if len(cached) == limit else start_ms
+                # A prefix or a suffix with unknown gaps cannot establish the
+                # latest rows. In that case issue one bounded authoritative query.
+                if not self._history_cache.get_missing_ranges(
+                        symbol, period, adjust, coverage_start, end_exclusive_ms):
+                    return [Kline(*row, symbol=symbol) for row in cached]
+            rows = self._perform_history_query(
+                symbol, period, start_ms, end_exclusive_ms,
+                limit, timeout, adjust=adjust)
+            if len(rows) > limit:
+                raise QueryError("History response exceeds the current row limit")
+            timestamps = [int(row.timestamp) for row in rows]
+            if (any(b <= a for a, b in zip(timestamps, timestamps[1:]))
+                    or (timestamps and start_ms and timestamps[0] < start_ms)
+                    or (timestamps and end_exclusive_ms and timestamps[-1] >= end_exclusive_ms)):
+                raise QueryError("Invalid latest history response range or order")
+            if rows and start_ms and end_ms and self._history_cache.enabled:
+                self._history_cache.store_range(
+                    symbol, period, adjust, rows[0].timestamp if len(rows) == limit else start_ms,
+                    end_exclusive_ms, [(r.timestamp, r.open, r.high, r.low, r.close,
+                                        r.volume, r.turnover, r.open_interest) for r in rows])
+            return rows
 
         if start_ms and end_ms and self._history_cache.enabled:
             return self._get_history_with_local_cache(
@@ -1178,6 +1216,7 @@ class RtdataClient(RealtimeClientMixin):
         success, error_msg = proto.decode_auth_response(payload)
         logger.debug(f"AUTH_RESPONSE payload_len={len(payload)} success={success} error='{error_msg}'")
         self._auth_success = success
+        self._history_max_rows = login_history_max_rows(payload) if success else DEFAULT_MAX_ROWS
         self._auth_error = error_msg
         if success:
             with self._token_status_lock:
@@ -1542,6 +1581,7 @@ class RtdataClient(RealtimeClientMixin):
 
     def _handle_disconnected(self, reason: str):
         self._authenticated = False
+        self._history_max_rows = DEFAULT_MAX_ROWS
         self._auth_success = False
         self._reset_realtime(reason or 'disconnected')
         self._notify_realtime_status()

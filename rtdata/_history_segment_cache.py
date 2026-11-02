@@ -103,7 +103,7 @@ class HistorySegmentCache:
             return self._difference([(start_ms, end_exclusive_ms)], coverages)
 
     def load_range(self, symbol: str, period: str, adjust: str,
-                   start_ms: int, end_ms: int) -> List[KlineRow]:
+                   start_ms: int, end_ms: int, *, latest_limit: int = 0) -> List[KlineRow]:
         if not self.enabled or start_ms <= 0 or end_ms < start_ms:
             return []
 
@@ -117,8 +117,11 @@ class HistorySegmentCache:
 
             merged: Dict[int, KlineRow] = {}
             for seg in relevant:
-                for row in self._read_segment(series_dir / "segments" / seg["file"], start_ms, end_ms):
+                for row in self._read_segment(series_dir / "segments" / seg["file"], start_ms, end_ms,
+                                              latest_limit=latest_limit):
                     merged[row[0]] = row
+                if latest_limit and len(merged) > latest_limit:
+                    merged = {ts: merged[ts] for ts in sorted(merged)[-latest_limit:]}
 
         return [merged[ts] for ts in sorted(merged)]
 
@@ -332,13 +335,27 @@ class HistorySegmentCache:
             f.flush()
             os.fsync(f.fileno())
 
-    def _read_segment(self, path: Path, start_ms: int, end_ms: int) -> List[KlineRow]:
+    def _read_segment(self, path: Path, start_ms: int, end_ms: int,
+                      *, latest_limit: int = 0) -> List[KlineRow]:
         rows: List[KlineRow] = []
         with open(path, "rb") as f:
             header = f.read(HEADER_STRUCT.size)
             magic, version, _start, _end, count, record_size = HEADER_STRUCT.unpack(header)
             if magic != MAGIC or version != SCHEMA_VERSION or record_size != RECORD_STRUCT.size:
                 raise ValueError(f"Invalid history segment: {path}")
+            if latest_limit:
+                low, high = 0, count
+                while low < high:
+                    mid = (low + high) // 2
+                    f.seek(HEADER_STRUCT.size + mid * record_size)
+                    timestamp = RECORD_STRUCT.unpack(f.read(record_size))[0]
+                    if timestamp <= end_ms:
+                        low = mid + 1
+                    else:
+                        high = mid
+                first = max(0, low - latest_limit)
+                count = low - first
+                f.seek(HEADER_STRUCT.size + first * record_size)
             for _ in range(count):
                 raw = f.read(RECORD_STRUCT.size)
                 row = RECORD_STRUCT.unpack(raw)
