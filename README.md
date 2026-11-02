@@ -3,7 +3,10 @@
 `rtdata` 是用于实时行情、历史 K 线和财务数据查询的 Python SDK。
 History V2 列式压缩历史流默认开启，普通安装包含 Zstandard。
 
-当前版本：**0.3.6**。
+当前版本：**0.3.9**。
+
+普通 token 一次历史查询最多返回请求区间内最新5000根，按时间升序返回，缓存也遵守限额。
+无限制会话保留完整区间分页。安装本版本前，请确认服务端已支持最新历史选择。
 
 实时协议默认 `auto`：升级后原有 `API(token=...)`、`RtdataClient(token=...)` 和订阅代码
 无需增加参数，即可与支持全字段的服务端自动协商；旧服务端仍可回退到六字段协议。
@@ -41,20 +44,20 @@ V2快照只读，NULL保留为None；自行修改Quote或按旧dataclass导出�
 ### 安装 wheel
 
 ```bash
-pip install rtdata-0.3.6-py3-none-any.whl
+pip install rtdata-0.3.9-py3-none-any.whl
 ```
 
 如已安装版本号更高的临时包，请使用明确的 wheel 路径重装，再重启 Python 或订阅进程：
 
 ```bash
-python -m pip install --force-reinstall --no-cache-dir ./rtdata-0.3.6-py3-none-any.whl
+python -m pip install --force-reinstall --no-cache-dir ./rtdata-0.3.9-py3-none-any.whl
 python -c "import rtdata; print(rtdata.__version__, rtdata.__file__)"
 ```
 
 普通安装已包含 History V2 所需的 Zstandard。旧安装命令仍兼容，无需再指定 extra：
 
 ```bash
-pip install "rtdata-0.3.6-py3-none-any.whl[history-v2]"
+pip install "rtdata-0.3.9-py3-none-any.whl[history-v2]"
 ```
 
 也可以从源码开发安装：
