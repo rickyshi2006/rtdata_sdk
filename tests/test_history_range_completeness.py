@@ -21,6 +21,17 @@ def make_kline(timestamp: int) -> Kline:
 
 
 class HistoryRangeCompletenessTest(unittest.TestCase):
+    def setUp(self):
+        original = RtdataClient.__init__
+
+        def unlimited(client, *args, **kwargs):
+            original(client, *args, **kwargs)
+            client._history_max_rows = 0
+
+        self.patch = mock.patch.object(RtdataClient, '__init__', unlimited)
+        self.patch.start()
+        self.addCleanup(self.patch.stop)
+
     def test_inclusive_end_survives_half_open_upstream_and_cache(self):
         for cache in (False, True):
             for end in (100, 104):

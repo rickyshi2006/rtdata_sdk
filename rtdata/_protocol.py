@@ -296,7 +296,7 @@ def encode_history_request(request_id: int, symbol_id: int, period_str: str,
                            start_time: int, end_time: int,
                            max_count: int, symbol_code: str,
                            adjust: str = 'none',
-                           history_v2_options: bytes = b'') -> bytes:
+                           history_v2_options: bytes = b'', *, latest: bool = False) -> bytes:
     """构建 HISTORY_REQUEST 完整消息
 
     start_time/end_time are UTC epoch milliseconds; the range is [start, end).
@@ -321,7 +321,9 @@ def encode_history_request(request_id: int, symbol_id: int, period_str: str,
     payload += struct.pack('!I', max_count)
     payload += struct.pack('!H', len(code_bytes))
     payload += code_bytes
-    payload += struct.pack('B', adjust_code)
+    # Bit 7 requests the newest rows; old peers reject this mode rather than
+    # silently returning a chronological prefix.
+    payload += struct.pack('B', adjust_code | (0x80 if latest else 0))
     if history_v2_options:
         history_v2_protocol.RequestOptions.decode(history_v2_options)
         payload += history_v2_options

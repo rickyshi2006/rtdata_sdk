@@ -131,6 +131,7 @@ class HistoryV2ClientFlowTest(unittest.TestCase):
 
     def test_v2_request_decodes_off_thread_and_replenishes_window(self):
         client, connection = self.make_client()
+        client._history_max_rows = 0
         with mock.patch.object(
             client._symbol_map, "code_to_id", return_value=9001
         ), mock.patch.object(
