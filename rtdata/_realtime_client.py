@@ -1,10 +1,12 @@
 """Connection-bound realtime adapter. No user callback runs under the state lock."""
 
+import json
 import logging
 import queue
 import secrets
 import threading
 import time
+import warnings
 from types import MappingProxyType
 
 from . import _protocol as proto
@@ -17,11 +19,45 @@ from .models import Quote, RealtimeStatus, RealtimeTableStatus
 logger = logging.getLogger(__name__)
 
 
+def _compat_realtime_option(options):
+    unknown = set(options) - {'realtime_futu_markets'}
+    if unknown:
+        raise TypeError('unexpected keyword argument: ' + sorted(unknown)[0])
+    if not options:
+        return None
+    value = options['realtime_futu_markets']
+    if type(value) is not bool:
+        raise TypeError('legacy realtime market option must be bool')
+    warnings.warn('Provider-specific realtime options are deprecated; omit them '
+                  'to negotiate all supported markets automatically.',
+                  DeprecationWarning, stacklevel=3)
+    return value
+
+
+def _login_realtime_capability(payload):
+    # Old peers reject unknown market IDs, so expand only on this login's hint.
+    fallback = cap.supported(cap.Role.SDK)
+    if not 1 < len(payload) <= 4096 or payload[0] != 1:
+        return fallback
+    try:
+        obj = json.loads(payload[1:])
+        hint = obj['realtime_v2']
+        version, markets, limit = hint['version'], hint['market_mask'], hint['max_payload']
+        if (type(version) is not int or version != 1 or type(markets) is not int
+                or not 0 < markets < 1 << 32 or type(limit) is not int
+                or not 64 <= limit <= cap.EXTENDED_PAYLOAD):
+            return fallback
+        return cap.supported(cap.Role.SDK, markets & cap.EXTENDED_SOURCE_MASK, limit)
+    except (ValueError, TypeError, KeyError, RecursionError):
+        return fallback
+
+
 class RealtimeClientMixin:
-    def _init_realtime(self, mode, futu_markets=False):
+    def _init_realtime(self, mode, market_override=None):
+        self._realtime_market_override = market_override
         self._realtime = cap.Session(cap.Role.SDK, cap.Role.CLOUD, mode,
-                                     cap.EXTENDED_SOURCE_MASK if futu_markets else cap.SOURCE_MASK,
-                                     cap.EXTENDED_PAYLOAD if futu_markets else cap.MAX_PAYLOAD)
+                                     cap.SOURCE_MASK if market_override is False else cap.EXTENDED_SOURCE_MASK,
+                                     cap.MAX_PAYLOAD if market_override is False else cap.EXTENDED_PAYLOAD)
         self._realtime_lock = threading.RLock()
         self._realtime_changed = threading.Condition(self._realtime_lock)
         self._realtime_connection = None
@@ -148,6 +184,10 @@ class RealtimeClientMixin:
         session.sent(generation, action, success, self._realtime_now())
 
     def _realtime_apply_locked(self):
+        if self._realtime_connection:
+            selected = self._realtime.selected
+            self._realtime_connection._realtime_max_payload = (
+                selected.max_payload if selected else self._realtime.local.max_payload)
         mask = self._realtime.take_invalidations()
         if mask:
             self._invalidate_realtime_locked(mask)
@@ -175,7 +215,7 @@ class RealtimeClientMixin:
             self._realtime_apply_locked()
         self._notify_realtime_status()
 
-    def _begin_realtime(self):
+    def _begin_realtime(self, auth_payload=b'\x01'):
         if self._realtime.mode == 'legacy':
             return
         with self._realtime_lock:
@@ -185,6 +225,8 @@ class RealtimeClientMixin:
             if self._realtime_current_locked():
                 return
             self._realtime.reset(self._realtime.generation + 1, True)
+            if self._realtime_market_override is None:
+                self._realtime.local = _login_realtime_capability(auth_payload)
             self._realtime_connection = conn
             self._realtime_transport_generation = conn.generation
             self._invalidate_realtime_locked(all_quotes=True)

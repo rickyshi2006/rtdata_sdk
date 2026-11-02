@@ -1,6 +1,6 @@
 # Realtime quote fields
 
-Version 0.3.5 defaults to automatic negotiation in both `API` and `RtdataClient`.
+Both `API` and `RtdataClient` default to automatic V2 full-field negotiation.
 Existing connection and subscription calls need no additional argument.
 
 ```python
@@ -32,13 +32,19 @@ negotiation does not mean a first quote has arrived.
 
 ## Additional markets
 
-On a gateway advertising the additional market schemas, pass
-`realtime_futu_markets=True` to `API` or `RtdataClient`. This opt-in adds
-`overseas_futures` (schema 4) and `crypto` (schema 5), including ten-level
-books, signed 64-bit quantities and source quantity precision fields.
-Keep the default `False` when connecting to older gateways: their original
-capability parser does not understand the additional market identifiers.
-The five existing categories and their field definitions are unchanged.
+Version 0.3.7 automatically includes every supported market advertised by the
+connected server, including `overseas_futures` (schema 4) and `crypto` (schema 5).
+No market-enable or provider-selection argument is needed. Server-side routing
+selects the data provider; client capability negotiation only selects the format.
+The additional schemas support up to ten book levels, signed 64-bit quantities
+and quantity precision fields. Actual available depth depends on the instrument.
+
+The successful login response may advertise supported market IDs and frame
+limits. These are re-evaluated on every connection. Without this metadata, the
+SDK sends the original five-category offer understood by older strict parsers;
+servers without V2 support retain six-field fallback. Existing category field
+definitions and schema identities are unchanged. Obsolete provider-specific
+keyword arguments are accepted only for backward compatibility and deprecated.
 
 `raw_bits` is a JSON string mapping source field-group numbers to hex-encoded
 protobuf bytes. It preserves unnamed source fields without inventing names or
@@ -72,7 +78,7 @@ as attributes or through the immutable `quote.fields` mapping. Export with
 - `wire_version`, `schema_id`, `schema_version`, `source_id`, `source_epoch`
   and `sequence` describe quote format and freshness.
 - The compatibility attribute `source_table` contains a public category:
-  `cn_equity`, `hk_equity`, `futures`, `us_equity` or `fx`.
+  `cn_equity`, `hk_equity`, `futures`, `us_equity`, `fx`, `overseas_futures` or `crypto`.
 
 Code that modifies a quote must keep its own copy. Code that exports quotes
 should use `dict(quote.fields)` to include all available fields.

@@ -1,25 +1,108 @@
 import json
+import inspect
 import tempfile
 import unittest
 from rtdata import API, RtdataClient
 from rtdata import _realtime_capability as cap
 from rtdata import _realtime_protocol as wire
 from rtdata._realtime_schema import SCHEMAS
+from rtdata._realtime_client import _login_realtime_capability
+from rtdata import _protocol as proto
+from test_realtime_client import FakeConnection
+
+
+def login_hint(markets=127, limit=1048576):
+    return b'\x01' + json.dumps({'realtime_v2': {
+        'version': 1, 'market_mask': markets, 'max_payload': limit}}).encode()
+
+
+def extended_row(source, sequence=1):
+    schema, code = (4, 'CNmain.SGX') if source == 6 else (5, 'BTCUSDT.BINANCE')
+    fields = dict.fromkeys(name for name, _ in SCHEMAS[schema])
+    fields.update(code=code, trade_time=1793497529283, last=78506.31,
+                  bid_price1=78506.30, ask_price1=78506.31,
+                  bid_volume1=176720000, ask_volume1=8638690000,
+                  depth_levels=1, book_volume_precision=9,
+                  raw_bits=json.dumps({'3': 'ab' * 12000}))
+    return wire.Snapshot.from_fields(source, 91, sequence, fields)
 
 
 class ExtendedRealtimeTest(unittest.TestCase):
-    def test_optional_sources_keep_default_offer_compatible(self):
+    def test_deprecated_overrides_keep_existing_calls_compatible(self):
         with tempfile.TemporaryDirectory() as directory:
             for factory in (API, RtdataClient):
                 for enabled, mask in ((False, 31), (True, 127)):
-                    client = factory('test', symbol_cache_dir=directory,
-                                     history_cache_enabled=False, realtime_futu_markets=enabled)
+                    with self.assertWarns(DeprecationWarning):
+                        client = factory('test', symbol_cache_dir=directory,
+                                         history_cache_enabled=False, realtime_futu_markets=enabled)
                     try:
                         state = client._client if isinstance(client, API) else client
                         self.assertEqual(state._realtime.local.sources, mask)
                         self.assertEqual(cap.intersection(cap.supported(cap.Role.CLOUD), state._realtime.local).sources, 31)
                     finally:
                         client.close()
+
+    def test_public_defaults_negotiate_all_markets_without_provider_option(self):
+        with tempfile.TemporaryDirectory() as directory:
+            for factory in (API, RtdataClient):
+                self.assertNotIn('realtime_futu_markets', inspect.signature(factory).parameters)
+                public = factory('test', symbol_cache_dir=directory,
+                                 async_callbacks=False, history_cache_enabled=False)
+                try:
+                    client = public._client if isinstance(public, API) else public
+                    client._conn = FakeConnection()
+                    client._symbol_map.update_from_dict({i: extended_row(i).fields['code'] for i in (6, 7)})
+                    client._dispatch_message(proto.MsgType.AUTH_RESPONSE, 0, login_hint(), 1, client._conn)
+                    client._authenticated = True
+                    offer = cap.Capability.decode(client._conn.sent[-1][10:])
+                    self.assertEqual((offer.sources, offer.max_payload), (127, 1048576))
+                    ack = cap.intersection(cap.supported(cap.Role.CLOUD, 127, 1048576), offer)
+                    client._dispatch_message(cap.ACK, 0, ack.encode(), 1, client._conn)
+                    states = tuple(cap.SourceState(i, True, cap.Reason.READY, 91) for i in range(1, 8))
+                    client._dispatch_message(cap.SOURCE_STATUS, 0, cap.Status(offer.nonce, 1, states).encode(), 1, client._conn)
+                    for source in (6, 7):
+                        row = extended_row(source)
+                        client._dispatch_message(cap.SNAPSHOT, source, wire.encode(row), 1, client._conn)
+                        quote = public.get_quote(row.fields['code'])
+                        self.assertEqual(quote.wire_version, 2)
+                        self.assertEqual(dict(quote.fields), dict(row.fields))
+                        self.assertEqual(quote.bid_volumes[0], 176720000)
+                        self.assertEqual(quote.ask_volumes[0], 8638690000)
+                        self.assertEqual(quote.last, 78506.31)
+                finally:
+                    public.close()
+
+    def test_login_hint_is_bounded_optional_and_connection_local(self):
+        baseline = cap.supported(cap.Role.SDK)
+        for payload in (b'\x01', b'\x00', b'\x01hello', b'\x01null', b'\x01[]', b'\x01\xff',
+                        b'\x01' + b'[' * 1500 + b']' * 1500,
+                        b'\x01' + b'x' * 4096, login_hint(0), login_hint(True),
+                        login_hint(127, True), login_hint(127, 1048577), login_hint(127, 63),
+                        b'\x01{"realtime_v2":{"version":true,"market_mask":127,"max_payload":1048576}}',
+                        b'\x01{"realtime_v2":{"version":2}}'):
+            self.assertEqual(_login_realtime_capability(payload), baseline)
+        self.assertEqual(_login_realtime_capability(login_hint(255)).sources, 127)
+        self.assertEqual(_login_realtime_capability(login_hint(31, 16384)), baseline)
+        with tempfile.TemporaryDirectory() as directory:
+            client = RtdataClient('test', symbol_cache_dir=directory, history_cache_enabled=False)
+            try:
+                client._conn = FakeConnection()
+                for payload, mask in ((login_hint(), 127), (b'\x01', 31), (login_hint(), 127)):
+                    client._reset_realtime('test_reconnect')
+                    client._conn.generation += 1
+                    client._dispatch_message(proto.MsgType.AUTH_RESPONSE, 0, payload,
+                                             client._conn.generation, client._conn)
+                    offer = cap.Capability.decode(client._conn.sent[-1][10:])
+                    self.assertEqual(offer.sources, mask)
+            finally:
+                client.close()
+
+    def test_unknown_options_still_fail(self):
+        for factory in (API, RtdataClient):
+            with self.assertRaises(TypeError):
+                factory('test', realtime_typo=True)
+            with self.assertRaises(TypeError):
+                factory('test', realtime_futu_markets='yes')
 
     def test_new_schema_full_depth_precision_and_nulls(self):
         for source, schema, code in ((6, 4, 'CNmain.SGX'), (7, 5, 'BTCUSDT.BINANCE')):

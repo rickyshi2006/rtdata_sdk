@@ -7,6 +7,7 @@ History V2 列式压缩历史流默认开启，普通安装包含 Zstandard。
 
 实时协议默认 `auto`：升级后原有 `API(token=...)`、`RtdataClient(token=...)` 和订阅代码
 无需增加参数，即可与支持全字段的服务端自动协商；旧服务端仍可回退到六字段协议。
+所有服务端声明支持的市场均默认参与 V2 协商，包括海外期货、加密货币；客户端无需指定后端数据源。
 新增字段通过 `quote.fields` 或对应属性读取，原有 `last/bid/ask/volume/timestamp` 等读取方式保留。
 显式 `legacy` 保留旧行为，`required_v2` 则禁止静默回退。详见 `docs/REALTIME-FULL-FIELDS.md`。
 V2快照只读，NULL保留为None；自行修改Quote或按旧dataclass导出的应用需按文档调整。

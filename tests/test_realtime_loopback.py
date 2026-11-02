@@ -7,11 +7,12 @@ import unittest
 from dataclasses import replace
 from unittest.mock import patch
 
-from rtdata import RtdataClient, RealtimeUnavailableError
+from rtdata import API, RtdataClient, RealtimeUnavailableError
 from rtdata import _protocol as proto
 from rtdata import _realtime_capability as cap
 from rtdata import _realtime_protocol as wire
 from test_realtime_client import fixture
+from test_realtime_extended import login_hint, extended_row
 
 
 def read_exact(sock, size):
@@ -49,13 +50,13 @@ class Peer:
         self.thread = threading.Thread(target=run, daemon=True)
         self.thread.start()
 
-    def accept(self):
+    def accept(self, auth_payload=b'\x01'):
         sock, _ = self.listener.accept()
         self.sockets.append(sock)
         sock.settimeout(4)
         kind, _, _ = read_frame(sock)
         assert kind == proto.MsgType.AUTH
-        sock.sendall(proto.build_message(proto.MsgType.AUTH_RESPONSE, 0, b'\x01'))
+        sock.sendall(proto.build_message(proto.MsgType.AUTH_RESPONSE, 0, auth_payload))
         return sock
 
     def until(self, sock, expected):
@@ -70,21 +71,28 @@ class Peer:
             pending.append(frame)
         raise AssertionError('missing message')
 
-    def negotiate(self, sock, epoch=91):
+    def negotiate(self, sock, epoch=91, sources=31):
         _, _, payload = self.until(sock, cap.OFFER)
         offer = cap.Capability.decode(payload)
-        ack = cap.intersection(cap.supported(cap.Role.CLOUD), offer)
+        if sources == 127:
+            assert offer.sources == 127 and offer.max_payload == cap.EXTENDED_PAYLOAD
+        else:
+            # Emulate the original strict parser, not just a modern intersection.
+            assert offer.sources & ~31 == 0 and offer.max_payload <= cap.MAX_PAYLOAD
+        ack = cap.intersection(cap.supported(cap.Role.CLOUD, sources,
+                              cap.EXTENDED_PAYLOAD if sources == 127 else cap.MAX_PAYLOAD), offer)
         frame = proto.build_message(cap.ACK, 0, ack.encode())
         sock.sendall(frame[:7])
         sock.sendall(frame[7:])
         _, _, commit = self.until(sock, cap.COMMIT)
         assert commit == replace(ack, role=cap.Role.SDK).encode()
-        self.status(sock, ack.nonce, epoch=epoch)
+        self.status(sock, ack.nonce, epoch=epoch, sources=sources)
         return ack.nonce
 
-    def status(self, sock, nonce, revision=1, epoch=91, ready=True):
+    def status(self, sock, nonce, revision=1, epoch=91, ready=True, sources=31):
         status = cap.Status(nonce, revision, tuple(cap.SourceState(sid, ready,
-            cap.Reason.READY if ready else cap.Reason.SUSPENDED, epoch if ready else 0) for sid in range(1, 6)))
+            cap.Reason.READY if ready else cap.Reason.SUSPENDED, epoch if ready else 0)
+            for sid in range(1, 8) if sources & cap.source_bit(sid)))
         sock.sendall(proto.build_message(cap.SOURCE_STATUS, 0, status.encode()))
 
     def subscribe(self, sock):
@@ -104,6 +112,69 @@ class Peer:
 
 
 class RealtimeLoopbackTest(unittest.TestCase):
+    def test_reconnect_between_original_and_extended_peers(self):
+        original = fixture(1, code='A.SH')
+        crypto = extended_row(7)
+
+        def scenario(peer):
+            for extended in (False, True, False):
+                sock = peer.accept(login_hint() if extended else b'\x01')
+                peer.negotiate(sock, sources=127 if extended else 31)
+                peer.subscribe(sock)
+                sid, row = (7, crypto) if extended else (1, original)
+                sock.sendall(proto.build_message(cap.SNAPSHOT, sid, wire.encode(row)))
+                try:
+                    while read_frame(sock):
+                        pass
+                except EOFError:
+                    pass
+
+        peer, client = self.make(scenario, async_callbacks=False)
+        client._symbol_map.update_from_dict({1: 'A.SH', 7: 'BTCUSDT.BINANCE'})
+        for extended in (False, True, False):
+            client.connect(2)
+            row = crypto if extended else original
+            client.subscribe([row.fields['code']])
+            quote = client.wait_for_quote(row.fields['code'], 2)
+            self.assertEqual(dict(quote.fields), dict(row.fields))
+            self.assertEqual(client._conn._realtime_max_payload, 1048576 if extended else 16384)
+            client.close()
+        self.assertEqual(peer.errors, [])
+
+    def test_both_public_defaults_receive_all_market_books_over_tcp(self):
+        rows = {i: fixture(i, code='MARKET' + str(i)) for i in range(1, 6)}
+        rows.update({i: extended_row(i) for i in (6, 7)})
+
+        def scenario(peer):
+            sock = peer.accept(login_hint())
+            peer.negotiate(sock, sources=127)
+            peer.subscribe(sock)
+            for sid, row in rows.items():
+                sock.sendall(proto.build_message(cap.SNAPSHOT, sid, wire.encode(row)))
+            peer.stop.wait(5)
+
+        for factory in (API, RtdataClient):
+            with self.subTest(factory=factory.__name__), tempfile.TemporaryDirectory() as directory:
+                peer = Peer(scenario)
+                public = factory('test', symbol_cache_dir=directory,
+                                 history_cache_enabled=False, async_callbacks=False)
+                try:
+                    client = public._client if isinstance(public, API) else public
+                    client._api_url = None
+                    client._host, client._port = '127.0.0.1', peer.port
+                    client._auto_reconnect = False
+                    client._symbol_map.update_from_dict({i: row.fields['code'] for i, row in rows.items()})
+                    public.connect()
+                    public.subscribe([row.fields['code'] for row in rows.values()])
+                    for row in rows.values():
+                        quote = public.wait_for_quote(row.fields['code'], 2)
+                        self.assertEqual(quote.wire_version, 2)
+                        self.assertEqual(dict(quote.fields), dict(row.fields))
+                    self.assertEqual(peer.errors, [])
+                finally:
+                    public.close()
+                    peer.close()
+
     def make(self, scenario, mode=None, auto_reconnect=False, **kwargs):
         peer = Peer(scenario)
         self.addCleanup(peer.close)

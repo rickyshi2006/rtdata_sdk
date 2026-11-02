@@ -50,7 +50,7 @@ class API:
                  session_rehome_advertise: bool = True,
                  session_capability_ack_timeout: float = 1.0,
                  realtime_protocol: str = 'auto',
-                 realtime_futu_markets: bool = False):
+                 **compat_options):
         self._client = RtdataClient(
             token=token,
             api_url=api_url,
@@ -66,7 +66,7 @@ class API:
             session_rehome_advertise=session_rehome_advertise,
             session_capability_ack_timeout=session_capability_ack_timeout,
             realtime_protocol=realtime_protocol,
-            realtime_futu_markets=realtime_futu_markets,
+            **compat_options,
         )
         self._connected = False
 
