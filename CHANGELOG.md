@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-### 0.3.8
+## 0.3.6 - 2026-11-02
 
 - Use provider-neutral names for internal extended-market schemas without
   changing fields, schema identities or wire encoding.
@@ -12,16 +12,11 @@
 - Preserve automatic all-market negotiation, old-server fallback and explicit
   protocol modes. Data routing remains a server responsibility.
 
-### 0.3.7
-
 - Automatically negotiate V2 full fields for every market advertised at login,
   including overseas futures and crypto, without provider-specific options.
 - Keep original five-category negotiation for older servers and re-evaluate
-  capabilities on reconnect. Preserve explicit protocol modes and deprecated
-  keyword compatibility; provider routing remains a server responsibility.
-
-### 0.3.6
-
+  capabilities on reconnect. Preserve explicit protocol modes;
+  provider routing remains a server responsibility.
 - Enable history capability negotiation and prefer History V2 by default in both
   public clients. Retain V1 fallback for older peers and explicit opt-out switches.
 - Include Zstandard in the standard installation; keep the `history-v2` extra
