@@ -25,7 +25,7 @@ from typing import Callable, Optional, List, Dict, Iterator, Tuple, Union
 from . import _protocol as proto
 from . import _history_v2_protocol as history_v2
 from ._connection import Connection
-from ._realtime_client import RealtimeClientMixin
+from ._realtime_client import RealtimeClientMixin, _compat_realtime_option
 from . import _realtime_capability as realtime_cap
 from ._history_capability_runtime import HistoryCapabilityRuntime
 from ._session_capability_runtime import SessionCapabilityRuntime
@@ -108,8 +108,9 @@ class RtdataClient(RealtimeClientMixin):
         session_rehome_advertise: bool = True,
         session_capability_ack_timeout: float = 1.0,
         realtime_protocol: str = 'auto',
-        realtime_futu_markets: bool = False,
+        **compat_options,
     ):
+        market_override = _compat_realtime_option(compat_options)
         self._token = token
         self._host = host
         self._port = port
@@ -175,7 +176,7 @@ class RtdataClient(RealtimeClientMixin):
 
         self._quote_cache: Dict[str, Quote] = {}
         self._quote_cache_lock = threading.Lock()
-        self._init_realtime(realtime_protocol, realtime_futu_markets)
+        self._init_realtime(realtime_protocol, market_override)
 
         self._next_request_id = 1
         self._request_id_lock = threading.Lock()
@@ -269,7 +270,8 @@ class RtdataClient(RealtimeClientMixin):
             port=self._port,
             on_message=self._dispatch_message,
             on_disconnected=self._handle_disconnected,
-            realtime_max_payload=self._realtime.local.max_payload,
+            realtime_max_payload=(realtime_cap.MAX_PAYLOAD if self._realtime_market_override is False
+                                  else realtime_cap.EXTENDED_PAYLOAD),
             heartbeat_interval=self._heartbeat_interval,
             auto_reconnect=self._auto_reconnect,
         )
@@ -1185,7 +1187,7 @@ class RtdataClient(RealtimeClientMixin):
                 self._token_status = None
         if success:
             logger.info("Authenticated")
-            self._begin_realtime()
+            self._begin_realtime(payload)
             self._begin_history_capability_negotiation()
             self._begin_session_capability_negotiation()
         else:

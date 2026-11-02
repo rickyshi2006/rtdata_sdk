@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### 0.3.7
+
+- Automatically negotiate V2 full fields for every market advertised at login,
+  including overseas futures and crypto, without provider-specific options.
+- Keep original five-category negotiation for older servers and re-evaluate
+  capabilities on reconnect. Preserve explicit protocol modes and deprecated
+  keyword compatibility; provider routing remains a server responsibility.
+
 ### 0.3.6
 
 - Enable history capability negotiation and prefer History V2 by default in both
