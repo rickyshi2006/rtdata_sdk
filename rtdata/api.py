@@ -192,7 +192,6 @@ class API:
 
     def unsubscribe(self, symbols: Optional[List[str]] = None):
         """取消订阅"""
-        self._ensure_connected()
         self._client.unsubscribe(symbols)
 
     @property

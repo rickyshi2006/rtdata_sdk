@@ -14,7 +14,7 @@
 - History V2 能力协商、列式压缩和 V1 自动回退
 - 安全 session rehome（故障转移后回到账号首选节点）
 
-当前版本：`0.3.6`
+当前版本：`0.3.7`
 
 ## 1.1 当前支持范围
 
@@ -38,20 +38,20 @@ pip install -e .
 ### 2.2 安装 wheel
 
 ```bash
-pip install rtdata-0.3.6-py3-none-any.whl
+pip install rtdata-0.3.7-py3-none-any.whl
 ```
 
 如已安装版本号更高的临时包，使用明确的 wheel 路径重装后重启 Python 或订阅进程：
 
 ```bash
-python -m pip install --force-reinstall --no-cache-dir ./rtdata-0.3.6-py3-none-any.whl
+python -m pip install --force-reinstall --no-cache-dir ./rtdata-0.3.7-py3-none-any.whl
 python -c "import rtdata; print(rtdata.__version__, rtdata.__file__)"
 ```
 
 普通安装已包含 Zstandard，默认优先使用 History V2。旧 extra 安装命令仍兼容：
 
 ```bash
-pip install "rtdata-0.3.6-py3-none-any.whl[history-v2]"
+pip install "rtdata-0.3.7-py3-none-any.whl[history-v2]"
 ```
 
 连接端不支持或协商超时时自动兼容 History V1，无需强制升级旧服务端。
@@ -500,6 +500,18 @@ def on_token_status(status):
 5. 自动恢复已有订阅
 
 因此断线后你通常不需要手动再次 `subscribe()`。
+
+SDK 分别保存期望订阅和当前连接已确认的订阅。符号表暂时缺少某个代码时，
+`last_subscribe_warning` 会提示等待映射；代码不会从期望订阅中删除。
+配置 `api_url` 时，每个连接代次最多主动补查一次映射，不阻塞行情接收；
+后续收到映射更新也会自动补订，服务端已拒绝的品种不会因此反复重试。
+
+- `last_subscribe_requested`：尚未取消的全部期望订阅。
+- `last_subscribe_confirmed`：当前连接已确认的订阅，断线时清空。
+- `last_subscribe_rejected`：服务端未接受的已发送品种，不包含等待映射的品种。
+- `unsubscribe()`：断线期间同样取消恢复意图；迟到确认不会恢复已取消品种。
+- 全部输入代码均不在当前映射中时，`subscribe()` 仍抛出 `SymbolNotFoundError`，
+  不接受该次调用；部分代码有效时，暂缺代码保留为待补订。
 
 ### 11.1 安全节点迁移
 

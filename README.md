@@ -3,7 +3,7 @@
 `rtdata` 是用于实时行情、历史 K 线和财务数据查询的 Python SDK。
 History V2 列式压缩历史流默认开启，普通安装包含 Zstandard。
 
-当前版本：**0.3.6**。
+当前版本：**0.3.7**。
 
 实时协议默认 `auto`：升级后原有 `API(token=...)`、`RtdataClient(token=...)` 和订阅代码
 无需增加参数，即可与支持全字段的服务端自动协商；旧服务端仍可回退到六字段协议。
@@ -41,20 +41,20 @@ V2快照只读，NULL保留为None；自行修改Quote或按旧dataclass导出�
 ### 安装 wheel
 
 ```bash
-pip install rtdata-0.3.6-py3-none-any.whl
+pip install rtdata-0.3.7-py3-none-any.whl
 ```
 
 如已安装版本号更高的临时包，请使用明确的 wheel 路径重装，再重启 Python 或订阅进程：
 
 ```bash
-python -m pip install --force-reinstall --no-cache-dir ./rtdata-0.3.6-py3-none-any.whl
+python -m pip install --force-reinstall --no-cache-dir ./rtdata-0.3.7-py3-none-any.whl
 python -c "import rtdata; print(rtdata.__version__, rtdata.__file__)"
 ```
 
 普通安装已包含 History V2 所需的 Zstandard。旧安装命令仍兼容，无需再指定 extra：
 
 ```bash
-pip install "rtdata-0.3.6-py3-none-any.whl[history-v2]"
+pip install "rtdata-0.3.7-py3-none-any.whl[history-v2]"
 ```
 
 也可以从源码开发安装：
@@ -149,6 +149,11 @@ print(api.last_subscribe_rejected)
 
 `get_quote(symbol)` 只读取 SDK 内存中的最新缓存，通常需要先订阅该品种，不会额外发起
 一次服务端查询。
+
+重连会保留用户请求的全部订阅；品种映射暂缺时等待恢复，不将其误报为服务端拒绝。
+`last_subscribe_requested` 为当前期望订阅，`last_subscribe_confirmed` 为已确认订阅，
+`last_subscribe_rejected` 仅包含服务端未接受的已发送品种。
+`unsubscribe()` 在断线期间同样生效，不会为了取消订阅而建立新连接。
 
 ## 历史 K 线
 
