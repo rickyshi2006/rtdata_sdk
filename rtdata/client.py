@@ -35,6 +35,7 @@ from ._history_limits import DEFAULT_MAX_ROWS, login_history_max_rows
 from ._history_time import normalize_endpoint, market_zone, exclusive_end
 from ._history_v2_stream import HistoryV2RequestState
 from ._symbol_map import SymbolMap
+from ._subscription_client import SubscriptionClientMixin
 from .models import Quote, Kline, FinanceData, TokenStatus
 from .exceptions import (
     AuthenticationError, ConnectionError, SymbolNotFoundError,
@@ -86,7 +87,7 @@ class _HistoryV2DecodeQueue:
             return item
 
 
-class RtdataClient(RealtimeClientMixin):
+class RtdataClient(RealtimeClientMixin, SubscriptionClientMixin):
 
     def __init__(
         self,
@@ -164,15 +165,7 @@ class RtdataClient(RealtimeClientMixin):
         self._token_status_lock = threading.Lock()
         self._token_status: Optional[TokenStatus] = None
         self._symbol_map_event = threading.Event()
-        self._subscribed_codes: List[str] = []
-        self._pending_subscribe_codes: List[str] = []
-        self._subscribed_lock = threading.Lock()
-
-        self._last_subscribe_warning: Optional[str] = None
-        self._last_subscribe_rejected: List[str] = []
-        self._last_subscribe_confirmed: List[str] = []
-        self._last_subscribe_requested: List[str] = []
-        self._pending_subscribe_request: List[str] = []
+        self._init_subscriptions()
 
         self._quote_cache: Dict[str, Quote] = {}
         self._quote_cache_lock = threading.Lock()
@@ -243,6 +236,7 @@ class RtdataClient(RealtimeClientMixin):
         return decorator
 
     def connect(self, timeout: float = 15.0):
+        self._reset_subscriptions()
         self._reset_realtime('new_connection')
         self._authenticated = False
         self._history_max_rows = DEFAULT_MAX_ROWS
@@ -326,6 +320,7 @@ class RtdataClient(RealtimeClientMixin):
             except RealtimeUnavailableError:
                 self.close()
                 raise
+        self._resume_subscriptions()
         logger.info(
             "Ready. Symbols: %s node_id=%s",
             self._symbol_map.size,
@@ -384,15 +379,25 @@ class RtdataClient(RealtimeClientMixin):
                 timeout=timeout,
             )
             if symbols is not None:
-                self._symbol_map.update_from_dict(symbols, version)
+                self._update_discovered_symbols(symbols, version)
                 logger.info(f"Symbol map updated to version {version} ({len(symbols)} symbols)")
         elif self._symbol_map.size == 0:
             symbols, version = discovery.fetch_symbol_map(
                 self._api_url, self._token, timeout=timeout)
             if symbols is not None:
-                self._symbol_map.update_from_dict(symbols, version)
+                self._update_discovered_symbols(symbols, version)
+
+    def _update_discovered_symbols(self, symbols, version):
+        with self._realtime_lock:
+            old = self.symbols
+            self._symbol_map.update_from_dict(symbols, version)
+            if old != symbols:
+                self._invalidate_realtime_locked(all_quotes=True)
+        self._symbol_map_event.set()
+        self._resume_subscriptions()
 
     def close(self):
+        self._reset_subscriptions()
         self._authenticated = False
         self._history_max_rows = DEFAULT_MAX_ROWS
         self._auth_success = False
@@ -432,96 +437,6 @@ class RtdataClient(RealtimeClientMixin):
     @property
     def is_reconnecting(self) -> bool:
         return self._conn is not None and self._conn.reconnecting
-
-    def subscribe(self, symbols: List[str]):
-        if not self._authenticated:
-            raise ConnectionError("Not connected")
-
-        ids = self._symbol_map.codes_to_ids(symbols)
-        if not ids:
-            raise SymbolNotFoundError(f"No valid symbols found in: {symbols}")
-
-        with self._subscribed_lock:
-            requested = list(dict.fromkeys(self._subscribed_codes + symbols))
-            self._pending_subscribe_codes = requested
-            self._pending_subscribe_request = list(dict.fromkeys(symbols))
-            self._last_subscribe_warning = None
-            self._last_subscribe_rejected = []
-            self._last_subscribe_confirmed = []
-            self._last_subscribe_requested = list(self._pending_subscribe_request)
-
-        self._conn.send(proto.encode_subscribe(ids))
-        logger.info(f"Subscribe requested: {symbols}")
-
-    def unsubscribe(self, symbols: Optional[List[str]] = None):
-        if not self._authenticated:
-            return
-
-        if symbols is None:
-            self._conn.send(proto.encode_unsubscribe([]))
-            with self._subscribed_lock:
-                self._subscribed_codes.clear()
-                self._pending_subscribe_codes.clear()
-                self._pending_subscribe_request.clear()
-                self._last_subscribe_warning = None
-                self._last_subscribe_rejected = []
-                self._last_subscribe_confirmed = []
-                self._last_subscribe_requested = []
-        else:
-            ids = self._symbol_map.codes_to_ids(symbols)
-            if ids:
-                self._conn.send(proto.encode_unsubscribe(ids))
-            with self._subscribed_lock:
-                for s in symbols:
-                    if s in self._subscribed_codes:
-                        self._subscribed_codes.remove(s)
-                    if s in self._pending_subscribe_codes:
-                        self._pending_subscribe_codes.remove(s)
-                    if s in self._pending_subscribe_request:
-                        self._pending_subscribe_request.remove(s)
-                    if s in self._last_subscribe_rejected:
-                        self._last_subscribe_rejected.remove(s)
-                    if s in self._last_subscribe_confirmed:
-                        self._last_subscribe_confirmed.remove(s)
-                self._last_subscribe_requested = [
-                    code for code in self._last_subscribe_requested if code not in symbols
-                ]
-                if not self._last_subscribe_rejected:
-                    self._last_subscribe_warning = None
-
-    def _set_subscribed_codes_from_ids(self, ids: List[int]):
-        codes = []
-        seen = set()
-        for sid in ids:
-            code = self._symbol_map.id_to_code(sid)
-            if code and code not in seen:
-                seen.add(code)
-                codes.append(code)
-        with self._subscribed_lock:
-            requested = list(self._pending_subscribe_request)
-            rejected = [code for code in requested if code not in codes]
-            self._subscribed_codes = codes
-            self._pending_subscribe_codes = []
-            self._pending_subscribe_request = []
-            self._last_subscribe_confirmed = list(codes)
-            self._last_subscribe_rejected = rejected
-            if rejected:
-                self._last_subscribe_warning = (
-                    f"Subscribe partially accepted. Rejected symbols: {rejected}. "
-                    "They may be blocked by market permissions, symbol limits, or server-side filtering."
-                )
-            else:
-                self._last_subscribe_warning = None
-
-        if self._last_subscribe_warning:
-            logger.warning(self._last_subscribe_warning)
-            for cb in self._error_callbacks:
-                try:
-                    cb(self._last_subscribe_warning)
-                except Exception as e:
-                    logger.error(f"Error callback failed: {e}")
-        else:
-            logger.info(f"Subscribe confirmed: {codes}")
 
     def _normalize_history_endpoint(self, value: Union[int, float, str, datetime, date], *,
                                     symbol: str, is_end: bool) -> int:
@@ -1189,7 +1104,7 @@ class RtdataClient(RealtimeClientMixin):
             self._handle_snapshot(symbol_id, payload, connection_generation, source_connection)
         elif msg_type == proto.MsgType.SUBSCRIBE_RESPONSE:
             ids = proto.decode_subscribe_response(payload)
-            self._set_subscribed_codes_from_ids(ids)
+            self._set_subscribed_codes_from_ids(ids, connection_generation, source_connection)
             logger.debug(f"Subscribe response received: {len(ids)} symbols")
         elif msg_type == proto.MsgType.HEARTBEAT:
             pass
@@ -1416,6 +1331,7 @@ class RtdataClient(RealtimeClientMixin):
             if old != self.symbols:
                 self._invalidate_realtime_locked(all_quotes=True)
         self._symbol_map_event.set()
+        self._resume_subscriptions()
 
     def _handle_snapshot(self, header_symbol_id: int, payload: bytes,
                          generation=None, connection=None):
@@ -1580,6 +1496,7 @@ class RtdataClient(RealtimeClientMixin):
             self._handle_disconnected(reason)
 
     def _handle_disconnected(self, reason: str):
+        self._reset_subscriptions()
         self._authenticated = False
         self._history_max_rows = DEFAULT_MAX_ROWS
         self._auth_success = False
@@ -1637,6 +1554,7 @@ class RtdataClient(RealtimeClientMixin):
         return not self._session_rehome_requested
 
     def _handle_reconnected(self):
+        self._reset_subscriptions()
         self._reset_realtime('reconnecting')
         self._auth_success = False
         self._auth_error = ""
@@ -1678,18 +1596,7 @@ class RtdataClient(RealtimeClientMixin):
         if self._realtime.mode == 'required_v2':
             self.wait_for_realtime()
 
-        with self._subscribed_lock:
-            codes = list(self._subscribed_codes)
-        if codes:
-            ids = self._symbol_map.codes_to_ids(codes)
-            if ids:
-                if not self._conn.send(proto.encode_subscribe(ids)):
-                    self._authenticated = False
-                    raise RuntimeError(
-                        "Connection lost while restoring subscriptions")
-                logger.info(f"Re-subscribed {len(ids)} symbols after reconnect")
-            else:
-                raise RuntimeError(f"codes_to_ids returned empty for {codes}")
+        self._resume_subscriptions()
 
         if not self._conn.connected:
             self._authenticated = False

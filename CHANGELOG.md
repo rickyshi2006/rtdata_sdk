@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.7 - 2026-11-04
+
+- Preserve requested subscriptions across reconnects and temporary symbol-map
+  gaps; restore pending symbols when the catalog becomes available.
+- Refresh incomplete catalogs without blocking quote reception.
+- Keep cancellation effective during disconnects and ignore stale subscription
+  acknowledgements. Serialize overlapping requests to avoid mismatched results.
+- Distinguish pending catalog entries from server-rejected subscriptions;
+  report send failures instead of silently dropping requests.
+- No changes to subscription arguments or quote formats are required.
+
 ## 0.3.6 - 2026-11-02
 
 - Improve connection negotiation resilience to network delay and retransmission.
