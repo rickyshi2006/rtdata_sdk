@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased (main source)
+
+- Add market-aware `Quote/Kline.to_datetime()` display without changing stored
+  timestamps; explicit IANA zones and tzinfo objects are also supported.
+- Align usage guides and examples with current defaults, market codes, nullable
+  full-field quotes, timezone handling and connection lifecycle.
+- Add offline documentation/example checks. Published release artifacts are unchanged.
+
+The entries below describe their historical releases, not current defaults.
+
 ## 0.3.7 - 2026-11-04
 
 - Preserve requested subscriptions across reconnects and temporary symbol-map

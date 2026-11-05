@@ -41,6 +41,20 @@ The SDK must:
 Client-facing compatibility and quote behavior are documented in
 `docs/REALTIME-FULL-FIELDS.md` and `docs/SDK_USAGE.md`.
 
+## Documentation and examples
+
+When changing a public argument, default, model or behavior, update its usage
+guide and runnable example in the same branch. Keep `README.md` as the entry
+point, `docs/SDK_USAGE.md` as the parameter reference, and `examples/README.md`
+as the runnable index. Explain source-only features separately from released
+artifacts; move Unreleased entries to release notes only during an approved release.
+
+Run `python -m unittest discover -s tests -v` with `.[market-time]` installed.
+The offline documentation checks verify constructor defaults, local links,
+Python snippets, safe example imports, mocked example flows, nullable display
+and multi-market timestamps. They do not use real credentials or remote services.
+Do not use live examples as CI tests.
+
 ## Release
 
 1. Update `_version.py` from a development version to the final version.

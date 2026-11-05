@@ -1,58 +1,74 @@
-"""订阅实时行情示例
+"""多市场实时快照、完整字段和市场当地时间显示。
 
-订阅 A 股实时快照行情。
-交易时间: 9:30-11:30, 13:00-15:00 (北京时间)
-非交易时间连接正常但不会收到行情推送。
-
-注意：实时流是最新值优先，不保证逐条完整回放；
-若回调过慢，服务端可能主动断开，SDK 会自动重连。
+从环境变量 RTDATA_TOKEN 读取凭据；需要当前 main 源码，见 README.md。
+数量显示为原始整数，不假设股票、外汇、加密货币使用相同单位。
+合约到期或目录没有该代码时，按 api.symbols 选择可用品种。
 """
-import time
-import logging
-import rtdata
-from rtdata import Quote
 
-logging.basicConfig(level=logging.INFO,
-                    format="%(asctime)s [%(levelname)s] %(message)s")
+import logging
+
+import rtdata
+
+if __package__:
+    from ._common import connection_options, format_quote, require_datetime, wait
+else:
+    from _common import connection_options, format_quote, require_datetime, wait
+
 
 SYMBOLS = [
-    "601919.SH",   # 中远海控
-    # "EUR.JPY",   # 欧元/美元
-    "rb2605.SHF",   # 螺纹钢期货
+    "601919.SH",
+    "000001.SH",
+    "AAPL",
+    "EUR.USD",
+    "BTCUSDT.BINANCE",
+    "BTCUSDT.OKX",
+    "00700.HK",
+    "rb2701.SHF",
+    "au2612.SHF",
 ]
-
-# 推荐使用 API + 服务发现
-api = rtdata.API(token="your_token", api_url="https://api.vrrv.ccwu.cc")
-
-@api.on_quote
-def on_quote(q: Quote):
-    dt = q.to_datetime()  # Market-local display; timestamp remains UTC milliseconds.
-    ts = dt.strftime("%H:%M:%S.%f")[:-3]
-    print(f"  [{ts} {dt:%z}] {q.symbol:<12s}  "
-          f"last={q.last:.3f}  bid={q.bid:.3f}  "
-          f"ask={q.ask:.3f}  vol={q.volume}")
+PRINT_FULL_FIELDS = False
+LISTEN_SECONDS = 0.0  # 0: 持续监听，Ctrl+C 退出。
 
 
-@api.on_connect
-def on_connect():
-    print(">> Connected")
+def main(seconds=None):
+    require_datetime()
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+    api = rtdata.API(**connection_options())
+
+    @api.on_quote
+    def on_quote(q):
+        print(format_quote(q))
+        if PRINT_FULL_FIELDS:
+            print(dict(q.fields))
+
+    @api.on_connect
+    def on_connect():
+        print(">> Connected")
+
+    @api.on_disconnect
+    def on_disconnect(reason):
+        print(f">> Disconnected: {reason}")
+
+    @api.on_error
+    def on_error(error):
+        print(f">> Error: {error}")
+
+    @api.on_realtime_status
+    def on_realtime_status(status):
+        print(f">> Realtime phase={status.phase} reason={status.reason}")
+
+    try:
+        print(f"Subscribing: {SYMBOLS}")
+        api.subscribe(SYMBOLS)
+        wait(LISTEN_SECONDS if seconds is None else seconds)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        print("Confirmed:", api.last_subscribe_confirmed)
+        print("Rejected:", api.last_subscribe_rejected)
+        print("Warning:", api.last_subscribe_warning)
+        api.close()
 
 
-@api.on_disconnect
-def on_disconnect(reason):
-    print(f">> Disconnected: {reason}")
-
-
-print(f"Subscribing: {SYMBOLS}")
-api.connect()  # 先连接
-api.subscribe(SYMBOLS)
-
-# Ctrl+C to exit
-try:
-    while True:
-        time.sleep(1)
-except KeyboardInterrupt:
-    pass
-
-api.close()
-print("Done")
+if __name__ == "__main__":
+    main()

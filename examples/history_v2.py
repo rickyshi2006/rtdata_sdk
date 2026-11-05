@@ -1,14 +1,17 @@
 """History V2 能力协商、查询和自动回退状态示例。
 
-普通安装已默认包含 History V2 支持：
-    pip install rtdata-0.3.6-py3-none-any.whl
+普通安装默认包含 History V2，无需额外协议开关。
+时间显示使用当前 main 的 to_datetime()，安装见 examples/README.md。
 """
 
 import rtdata
 
 
-TOKEN = "your_token"
-API_URL = "https://api.vrrv.ccwu.cc"
+if __package__:
+    from ._common import connection_options, require_datetime
+else:
+    from _common import connection_options, require_datetime
+
 SYMBOL = "000001.SZ"
 PERIOD = "1d"
 START = "2025-06-02"
@@ -17,9 +20,9 @@ ADJUST = "none"
 
 
 def main() -> None:
+    require_datetime()
     with rtdata.API(
-        token=TOKEN,
-        api_url=API_URL,
+        **connection_options(),
         history_cache_enabled=False,
     ) as api:
         rows = api.get_kline(
@@ -41,7 +44,7 @@ def main() -> None:
             f"rows={len(rows)}"
         )
         if rows:
-            print(f"timestamp range: {rows[0].timestamp} ~ {rows[-1].timestamp}")
+            print("actual range:", rows[0].to_datetime().isoformat(), rows[-1].to_datetime().isoformat())
 
 
 if __name__ == "__main__":
