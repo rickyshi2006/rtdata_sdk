@@ -3,25 +3,24 @@
 账号需要具备相应市场权限。
 """
 
-from datetime import datetime
-
 import rtdata
 
 
-TOKEN = "your_token"
-API_URL = "https://api.vrrv.ccwu.cc"
+if __package__:
+    from ._common import connection_options, require_datetime
+else:
+    from _common import connection_options, require_datetime
+
 
 CASES = (
     ("A 股", "000001.SZ", "2025-06-09", "2025-06-16"),
     ("港股", "00700.HK", "2025-06-09", "2025-06-12"),
-    ("美股", "AAPL.US", "2020-08-26", "2020-09-02"),
+    ("美股", "AAPL", "2020-08-26", "2020-09-02"),
 )
 
 
 def fmt_row(row) -> str:
-    trade_time = datetime.fromtimestamp(row.timestamp / 1000).strftime(
-        "%Y-%m-%d %H:%M:%S"
-    )
+    trade_time = row.to_datetime().isoformat(timespec="milliseconds")
     return (
         f"{trade_time} O={row.open:.4f} H={row.high:.4f} "
         f"L={row.low:.4f} C={row.close:.4f}"
@@ -29,9 +28,9 @@ def fmt_row(row) -> str:
 
 
 def main() -> None:
+    require_datetime()
     with rtdata.API(
-        token=TOKEN,
-        api_url=API_URL,
+        **connection_options(),
         history_cache_enabled=False,
     ) as api:
         for market, symbol, start, end in CASES:
@@ -48,8 +47,9 @@ def main() -> None:
 
             print(f"\n{market} symbol={symbol} range={start}~{end}")
             for adjust, rows in result.items():
-                sample = fmt_row(rows[0]) if rows else "no data"
-                print(f"  {adjust:<8} rows={len(rows):>5} first={sample}")
+                first = fmt_row(rows[0]) if rows else "no data"
+                last = rows[-1].to_datetime().isoformat() if rows else "no data"
+                print(f"  {adjust:<8} rows={len(rows):>5} first={first} last={last}")
 
 
 if __name__ == "__main__":

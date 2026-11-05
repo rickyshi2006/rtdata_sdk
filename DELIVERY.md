@@ -1,208 +1,59 @@
-# rtdata SDK 交付说明
+# rtdata SDK 交付核对
 
-## 当前包信息
+## 源码与安装包分开核对
 
-- 包名：`rtdata`
-- 当前版本：`0.3.7`
+- 当前包版本号为 `0.3.7`，发布产物以 GitHub Release/tag 为准。
+- main 可以包含尚未发布的功能。当前 `Quote/Kline.to_datetime()` 已进入 main，
+  **不在已发布 v0.3.7 wheel 中**。不能只检查版本号就声称安装包支持最新示例。
+- 用户安装说明以 [README](README.md) 为入口，参数与行为以
+  [使用手册](docs/SDK_USAGE.md) 为准，避免在交付文档复制另一套过期接口说明。
+- 本轮文档/示例校准不发布新包、不改版本、不替换原 Release 附件。
 
-本次产物版本统一为 `0.3.7`，构建验证不等于已对外发布。
+## 安装与校验
 
-## v0.3.7 变更摘要
-
-- 修复重连和符号表暂缺时部分订阅丢失的问题。
-- 非阻塞刷新映射，恢复后自动补订；区分待恢复与服务端拒绝。
-- 修复并发确认、迟到确认及断线期间取消订阅的处理。
-- 保持现有订阅参数、默认协议协商和行情字段不变。
-
-发布时必须创建匹配的 `v0.3.7` tag；GitHub Release 和构建产物由 release workflow
-生成。安装时使用随包 SHA256SUMS 校验文件；重新安装同版本包时需使用
-`--force-reinstall --no-cache-dir`，并重启 Python 进程。
-
-## 当前支持范围
-
-- 实时数据：A 股、港股、美股、期货、外汇（按网关配置和权限）
-- 历史 K 线：A 股、港股、美股、期货、期权（按网关配置）
-- 历史复权：A 股、港股、美股
-- 财务数据：A 股、港股、美股；PIT 当前支持含公告日期的 A 股财务数据
-
-后续如有市场范围调整，再按实际能力更新文档与交付说明。
-
-## 当前交付产物
-
-构建输出目录：
-
-- 仓库根目录下的 `dist/`
-
-文件：
-
-- `rtdata-0.3.7-py3-none-any.whl`
-- `rtdata-0.3.7.tar.gz`
-
-优先建议对外提供 `.whl`。
-
-## 本次应向客户说明的关键点
-
-### 1. 推荐连接方式
-
-优先使用 HTTPS 服务发现：
-
-```python
-import rtdata
-
-api = rtdata.API(
-    token="your_token",
-    api_url="https://api.vrrv.ccwu.cc",
-)
-```
-
-不建议直接把云网关 TCP IP 暴露给客户。
-
-### 2. 实时通道语义
-
-实时行情是“最新值优先”的快照流，不是逐条事件流。
-
-应明确告知客户：
-
-- 中间某些快速变化可能被覆盖
-- 如果本地消费太慢，服务端可能丢弃旧快照
-- 极端情况下，服务端可能主动断开，SDK 会自动重连并恢复订阅
-- 如果只关心当前最新值，应优先使用 `get_quote()`
-
-### 3. 历史查询推荐写法
-
-主推 `start/end` 时间范围语义：
-
-```python
-rows = api.get_kline(
-    "000001.SZ",
-    period="1d",
-    start="2015-01-01",
-    end="2015-12-31",
-)
-```
-
-### 4. 本地历史缓存
-
-当前 SDK 的历史缓存不是 sqlite，而是本地分段二进制缓存。
-
-行为：
-
-- 首次查询会回源服务器
-- 再次查询相同区间时优先命中本地
-- 缺口区间才回源
-
-默认目录：
-
-- `~/.rtdata/history_v1/`
-
-关闭缓存：
-
-```python
-api = rtdata.API(
-    token="your_token",
-    api_url="https://api.vrrv.ccwu.cc",
-    history_cache_enabled=False,
-)
-```
-
-### 5. 查询失败语义
-
-当前 SDK 会区分以下场景：
-
-- `QueryError`
-  服务端显式拒绝，例如：
-  - `Market not allowed`
-  - `History download busy, retry later`
-  - `Upstream query channel unavailable`
-
-- `QueryTimeoutError`
-  等待响应超时
-
-- `DisconnectedError`
-  查询过程中连接断开
-
-### 6. 订阅部分成功提示
-
-如果某些 symbol 因权限、订阅数或服务端过滤被拒绝，SDK 会保留详细状态：
-
-```python
-print(api.last_subscribe_warning)
-print(api.last_subscribe_requested)
-print(api.last_subscribe_confirmed)
-print(api.last_subscribe_rejected)
-```
-
-## 安装方式
-
-### 安装 wheel
+正式交付使用审核过的不可变 wheel/sdist 及 `SHA256SUMS`：
 
 ```bash
-pip install rtdata-0.3.7-py3-none-any.whl
+python -m pip install --upgrade ./rtdata-0.3.7-py3-none-any.whl
+python -c "import rtdata; print(rtdata.__version__, rtdata.__file__)"
 ```
 
-普通安装已包含 History V2 依赖，旧 extra 命令仍兼容：
+新源码功能验收在仓库目录安装，不要将其冒充旧 Release：
 
 ```bash
-pip install "rtdata-0.3.7-py3-none-any.whl[history-v2]"
+python -m pip install -e ".[market-time]"
+python -c "import rtdata; print(rtdata.__version__, rtdata.__file__); print(hasattr(rtdata.Quote, 'to_datetime'))"
 ```
 
-### 安装源码包
+普通安装包含 Zstandard；Windows/精简系统的 IANA 时区数据可通过
+`market-time` extra 安装。升级后重启 Python 或订阅进程。
 
-```bash
-pip install rtdata-0.3.7.tar.gz
-```
+## 随包材料
 
-### 升级安装
+1. 已校验的 wheel、源码包和校验清单。
+2. 与该包对应 tag 的文档和示例，不能混用更新 main 的示例。
+3. 服务发现地址；token 通过独立渠道交付，不写入仓库、示例或共享日志。
+4. [示例索引](examples/README.md)、[时间说明](docs/TIME-AND-MARKETS.md)、
+   [实时字段](docs/REALTIME-FULL-FIELDS.md) 和 [Token 状态](docs/TOKEN_STATUS.md)。
 
-```bash
-pip install --upgrade rtdata-0.3.7-py3-none-any.whl
-```
+源码包通过 `MANIFEST.in` 包含文档、示例和离线测试；wheel 是 SDK 安装产物，
+不是完整示例仓库。构建输出 `dist/` 只能作为候选产物，不等于已发布。
 
-## 建议同时交付给客户的内容
+## 功能验收清单
 
-建议一起提供：
+- 默认实时自动协商全字段，旧端兼容；缺失值是 `None`，不要当成零。
+- 多市场代码使用服务目录；海外期货、加密货币不需要单独的客户端源选择参数。
+- 时间显示按市场选择时区或显式统一时区，保留原 UTC 毫秒，不手工偏移。
+- 行情是最新值优先的快照，不保证无损逐笔；重连恢复订阅，确认结果异步更新。
+- 历史按实际返回区间验收，不假定一次调用完整覆盖全部请求范围。
+- 缓存默认 `~/.rtdata/history_utc_v1/`；查询更正数据时可关闭缓存。
+- 区分认证、发现、连接、查询拒绝、超时、断线和实时不可用异常。
+- 财务字段按市场处理；PIT 支持范围见使用手册。
+- 原安装包不支持的新方法必须在正式发布后再要求客户升级使用。
 
-1. wheel 文件
-2. 一份最小示例代码
-3. discovery 域名
-4. token
-5. 一份使用说明，至少覆盖：
-   - 实时快照流语义
-   - 历史缓存行为
-   - 失败异常语义
-   - 订阅部分成功的检查方式
+## 发布流程
 
-## 最小示例
-
-```python
-import time
-import rtdata
-
-api = rtdata.API(
-    token="your_token",
-    api_url="https://api.vrrv.ccwu.cc",
-)
-
-@api.on_quote
-def on_quote(q):
-    print(q.symbol, q.last)
-
-api.subscribe(["rb2610.SHF"])
-
-rows = api.get_kline(
-    "rb2610.SHF",
-    period="1m",
-    start="2026-04-29",
-    end="2026-04-30",
-)
-print("history rows:", len(rows))
-
-time.sleep(10)
-api.close()
-```
-
-## 参考文档
-
-- `README.md`
-- `docs/SDK_USAGE.md`
-- `examples/`
+遵循 [DEVELOPMENT](DEVELOPMENT.md)：先分支审查/测试，原目录本地 main 合并验证，
+再同步相同 main。包发布另行批准，采用与版本一致的 tag，发布前更新
+`CHANGELOG.md` 与 `docs/RELEASE-NOTES.md`，由 release workflow 构建校验。
+不要覆盖旧 tag/附件来补充当前文档能力。

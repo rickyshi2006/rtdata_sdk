@@ -1,25 +1,33 @@
-"""rtdata SDK 基本用法
+"""最小订阅：环境变量 RTDATA_TOKEN，监听 60 秒；需要当前 main 源码。"""
 
-说明：实时订阅是最新值优先的快照流，回调应尽量轻量。
-若需要做慢处理，请将 quote 投递到你自己的队列/线程池。
-"""
-import time
 import rtdata
-from rtdata import Quote
 
-api = rtdata.API(token="your_token", api_url="https://api.vrrv.ccwu.cc")
-
-
-@api.on_quote
-def on_quote(quote: Quote):
-    print(f"  {quote.symbol}: last={quote.last:.4f}, vol={quote.volume}")
+if __package__:
+    from ._common import connection_options, format_quote, require_datetime, wait
+else:
+    from _common import connection_options, format_quote, require_datetime, wait
 
 
-api.subscribe(["601919.SH", "000001.SZ"])
+SYMBOLS = ["601919.SH", "000001.SZ"]
+LISTEN_SECONDS = 60.0
 
-try:
-    time.sleep(60)
-except KeyboardInterrupt:
-    pass
 
-api.close()
+def main():
+    require_datetime()
+    api = rtdata.API(**connection_options())
+
+    @api.on_quote
+    def on_quote(q):
+        print(format_quote(q))
+
+    try:
+        api.subscribe(SYMBOLS)
+        wait(LISTEN_SECONDS)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        api.close()
+
+
+if __name__ == "__main__":
+    main()

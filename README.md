@@ -1,340 +1,155 @@
 # rtdata SDK
 
-`rtdata` 是用于实时行情、历史 K 线和财务数据查询的 Python SDK。
-History V2 列式压缩历史流默认开启，普通安装包含 Zstandard。
+`rtdata` 提供实时行情订阅、历史 K 线和财务数据查询，支持 Python 3.9 及以上版本。
 
-当前版本：**0.3.7**。
+## 版本与安装
 
-实时协议默认 `auto`：升级后原有 `API(token=...)`、`RtdataClient(token=...)` 和订阅代码
-无需增加参数，即可与支持全字段的服务端自动协商；旧服务端仍可回退到六字段协议。
-所有服务端声明支持的市场均默认参与 V2 协商，包括海外期货、加密货币；客户端无需指定后端数据源。
-新增字段通过 `quote.fields` 或对应属性读取，原有 `last/bid/ask/volume/timestamp` 等读取方式保留。
-显式 `legacy` 保留旧行为，`required_v2` 则禁止静默回退。详见 `docs/REALTIME-FULL-FIELDS.md`。
-V2快照只读，NULL保留为None；自行修改Quote或按旧dataclass导出的应用需按文档调整。
-历史时间转换不会应用到实时 `trade_time`。
+当前包版本为 **0.3.7**。本页及使用文档跟随仓库 **main 源码**；已发布安装包的
+能力以对应 tag 和 [发布说明](docs/RELEASE-NOTES.md) 为准。
+**`Quote/Kline.to_datetime()` 已进入 main，尚未包含在已发布的 v0.3.7 安装包中。**
+使用下列新示例前，请安装当前源码；本次文档更新不替换既有发布包。
 
-## 功能概览
-
-- HTTPS 服务发现，自动获取 TCP 接入节点
-- 自动心跳、自动重连和订阅恢复
-- 使用服务发现时默认声明安全 session rehome 能力：故障转移后可回到账号首选节点
-- 实时行情采用“最新值优先”的快照流
-- 默认优先 History V2 列式压缩流，保留 History V1 兼容路径
-- 本地历史分段二进制缓存，可按 `symbol + period + adjust` 缓存缺口
-- A 股、港股、美股的历史 K 线复权查询（`none` / `forward` / `backward`）
-- A 股、港股、美股财务报表、TTM 和财务比率查询
-- Token 状态通知和订阅部分成功状态
-- 查询失败区分服务端拒绝、超时和连接中断
-
-## 支持范围
-
-| 功能 | 市场/品种 |
-| --- | --- |
-| 实时行情 | A 股、港股、美股、期货、外汇（按账号权限） |
-| 历史 K 线 | A 股、港股、美股、期货、期权（按账号权限） |
-| 历史复权 | A 股、港股、美股（按账号权限）；期货/期权不适用 |
-| 财务报表、TTM、财务比率 | A 股、港股、美股（按账号权限）；字段按市场原始 schema 返回 |
-| PIT（Point-in-Time） | 当前支持 A 股；港股、美股暂不支持 |
-
-## 安装
-
-### 安装 wheel
+在源码仓库目录执行（包含 Windows 等环境所需的时区数据）：
 
 ```bash
-pip install rtdata-0.3.7-py3-none-any.whl
+python -m pip install -e ".[market-time]"
+python -c "import rtdata; print(rtdata.__version__, rtdata.__file__); print(hasattr(rtdata.Quote, 'to_datetime'))"
 ```
 
-如已安装版本号更高的临时包，请使用明确的 wheel 路径重装，再重启 Python 或订阅进程：
+正式使用可从 [GitHub Releases](https://github.com/rickyshi2006/rtdata_sdk/releases)
+下载 wheel，以随包 `SHA256SUMS` 校验后安装：
 
 ```bash
-python -m pip install --force-reinstall --no-cache-dir ./rtdata-0.3.7-py3-none-any.whl
-python -c "import rtdata; print(rtdata.__version__, rtdata.__file__)"
+python -m pip install --upgrade ./rtdata-0.3.7-py3-none-any.whl
 ```
 
-普通安装已包含 History V2 所需的 Zstandard。旧安装命令仍兼容，无需再指定 extra：
+普通安装包含 Zstandard，历史 V2 默认协商并优先使用，不需要额外安装 `history-v2`。
+旧 extra 名仍兼容。更新安装后应重启 Python 进程；不要仅凭相同版本号推断源码能力。
 
-```bash
-pip install "rtdata-0.3.7-py3-none-any.whl[history-v2]"
-```
+## 快速开始：同时订阅多个市场
 
-也可以从源码开发安装：
-
-```bash
-pip install -e .
-```
-
-默认协商并优先使用 History V2；连接端不支持或协商超时时自动兼容 History V1。
-若手工跳过依赖安装且缺少 Zstandard，也只能使用 V1。
-
-## 快速开始
-
-推荐使用 `API` 和 HTTPS 服务发现：
+设置环境变量 `RTDATA_TOKEN` 为你的 token，不要把 token 提交到源码仓库。
 
 ```python
+import os
+import time
 import rtdata
 
-with rtdata.API(
-    token="your_token",
-    api_url="https://api.vrrv.ccwu.cc",
-) as api:
-    @api.on_quote
-    def on_quote(q):
-        print(q.symbol, q.last)
+api = rtdata.API(token=os.environ["RTDATA_TOKEN"])
 
-    api.subscribe(["601919.SH", "rb2610.SHF"])
-```
-
-`with` 会立即建立连接；实时示例需要在代码中继续等待或执行其他业务逻辑，退出代码块
-时连接随即关闭。完整持续监听写法见 `examples/basic_usage.py`。
-
-底层 `RtdataClient` 适合需要控制连接参数的场景：
-
-```python
-from rtdata import RtdataClient
-
-with RtdataClient(
-    token="your_token",
-    api_url="https://api.vrrv.ccwu.cc",
-) as client:
-    print(client.current_endpoint)
-```
-
-如果拿到的是卡号或 UUID，可先在 token 兑换页兑换 token：
-`https://rtdata.vrrv.ccwu.cc`。
-
-## 连接、自动重连与自动归位
-
-使用 `api_url` 时，SDK 会先调用 discovery，再连接返回的节点。`API` 默认开启自动
-重连和安全 session rehome：
-
-```python
-api = rtdata.API(
-    token="your_token",
-    api_url="https://api.vrrv.ccwu.cc",
-    session_rehome_advertise=True,  # v0.3.1 起为默认值
-)
-```
-
-节点故障时，会话可迁移到健康节点；SDK 会重新 discovery、认证并恢复已有订阅。
-首选节点恢复稳定后，会话可自动迁回首选节点。只有同时使用服务发现并保持
-`auto_reconnect=True`（底层 `RtdataClient`）时才会声明该能力。固定 `host:port`、关闭
-自动重连或显式设置 `session_rehome_advertise=False` 的客户端不会被主动迁移。
-
-连接后可检查：
-
-```python
-print(api.current_node_id)
-print(api.session_capability_state)
-print(api.session_rehome_negotiated)
-print(api.session_capability_fallback_reason)
-```
-
-## 实时订阅
-
-实时通道是最新值优先的快照流，不保证逐条完整回放。消费过慢时旧快照可能被覆盖或
-丢弃；极端情况下服务端会断开连接，SDK 随后自动重连并恢复订阅。
-
-```python
 @api.on_quote
 def on_quote(q):
-    print(q.symbol, q.last, q.volume, q.timestamp)
+    # 各品种自动使用其市场时区；输出包含 UTC offset。
+    dt = q.to_datetime()
+    last = "N/A" if q.last is None else f"{q.last:.4f}"
+    print(q.symbol, dt.isoformat(timespec="milliseconds"), last)
 
-api.subscribe(["601919.SH", "00700.HK", "AAPL.US"])
-
-print(api.last_subscribe_warning)
-print(api.last_subscribe_requested)
-print(api.last_subscribe_confirmed)
-print(api.last_subscribe_rejected)
+try:
+    api.subscribe(["601919.SH", "AAPL", "EUR.USD", "BTCUSDT.BINANCE"])
+    while True:
+        time.sleep(1)
+except KeyboardInterrupt:
+    pass
+finally:
+    api.close()
 ```
 
-`get_quote(symbol)` 只读取 SDK 内存中的最新缓存，通常需要先订阅该品种，不会额外发起
-一次服务端查询。
+实时默认为 `realtime_protocol="auto"`：自动协商 V2 全字段，旧服务端兼容回退。
+不需要按市场手工启用协议，更不需要指定后端数据源。回调里的 `q.wire_version`
+反映实际格式；“已连接”“已订阅”“已有行情”是不同状态。
 
-重连会保留用户请求的全部订阅；品种映射暂缺时等待恢复，不将其误报为服务端拒绝。
-`last_subscribe_requested` 为当前期望订阅，`last_subscribe_confirmed` 为已确认订阅，
-`last_subscribe_rejected` 仅包含服务端未接受的已发送品种。
-`unsubscribe()` 在断线期间同样生效，不会为了取消订阅而建立新连接。
+完整示例：[多市场订阅](examples/subscribe_realtime.py)、[基本订阅](examples/basic_usage.py)。
+示例脚本也接受可选的 `RTDATA_API_URL` 环境变量覆盖默认服务发现地址。
+
+## 行情字段与时间
+
+- `Quote` 保留 `last/bid/ask/volume/timestamp` 等常用属性，完整 V2 字段从
+  `q.fields` 读取，使用 `dict(q.fields)` 导出。V2 快照只读。
+- `None` 表示空值，不等于 `0`；档位列表可能为空或包含 `None`。
+- 盘口档数由协商 schema 和实际数据共同决定，并非所有市场都有十档。
+- `timestamp` 是 UTC epoch 毫秒；不要在整数上手工加减 8 小时。
+  `q.to_datetime()` / `k.to_datetime()` 只转换显示，不修改原始整数。
+- A 股、国内期货默认显示北京时间，港股显示香港时间；美股显示纽约时间，自动处理
+  夏令时。统一显示北京时间使用 `q.to_datetime("Asia/Shanghai")`。
+
+详见 [时间与市场代码](docs/TIME-AND-MARKETS.md)、[全字段说明](docs/REALTIME-FULL-FIELDS.md)。
+
+实时数据是最新值优先的**快照流**，不是无损逐笔事件流。慢回调可能跳过中间状态。
+不要在回调里做耗时 I/O 或阻塞查询；将工作交给自己的有界队列和工作线程。
+`get_quote(symbol)` 读取最新缓存，不发起行情查询；订阅后可以用
+`wait_for_quote(symbol, timeout=5.0)` 等待首个可用缓存快照。
 
 ## 历史 K 线
 
-推荐使用 `start/end` 时间范围：
-
 ```python
-rows = api.get_kline(
-    "000001.SZ",
-    period="1d",
-    start="2015-01-01",
-    end="2015-12-31",
-    adjust="none",
-)
-```
+import os
+import rtdata
 
-支持周期：`1m`、`5m`、`15m`、`30m`、`1h`、`2h`、`4h`、`1d`、`1w`、`1M`。
-
-时间参数支持毫秒时间戳、`datetime`、`date` 和常用日期时间字符串。仅传日期时会扩展
-为当天 `00:00:00 ~ 23:59:59.999`；`start` 必须不晚于 `end`。旧参数名
-`start_time` / `end_time` 仍兼容。
-
-无时区的日期、`datetime` 和字符串按标的市场解释：A 股/国内期货使用
-`Asia/Shanghai`，港股使用 `Asia/Hong_Kong`，美股使用 `America/New_York`
-（自动处理历史冬夏令时），不再使用运行 SDK 的机器时区。数值始终是 UTC epoch
-毫秒；带时区的 `datetime` 或 ISO 字符串（如 `2025-07-01T09:30:00-04:00`）
-保持其真实时刻。DST 不存在或重复的无时区时间会报错，需提供明确 UTC offset。
-`get_kline_for_today` 也按市场当地日期取当天。
-
-用户 API 的 `end` **包含端点**，SDK 在线协议中转换成 `[start_ms,end_ms+1)`；
-直接调用底层协议时结束时间本身是不包含的。`0` 仍保留为未指定范围的旧哨兵值。
-系统需要 IANA 时区数据；Windows 或精简环境缺失时可安装 `rtdata[market-time]`。
-这是无时区输入的行为变更；需要原宿主时区语义的调用方应传入带时区时间。
-新 SDK 使用独立本地缓存目录 `history_utc_v1`，不读取或删除旧 `history_v1`，
-避免历史错误时区的记录混入新结果。
-
-### 复权
-
-```python
-none_rows = api.get_kline(
-    "000001.SZ", period="1d", start="2025-06-02", end="2025-06-17", adjust="none"
-)
-forward_rows = api.get_kline(
-    "00700.HK", period="1d", start="2025-06-02", end="2025-06-12", adjust="forward"
-)
-backward_rows = api.get_kline(
-    "AAPL.US", period="1d", start="2020-08-26", end="2020-09-02", adjust="backward"
-)
-```
-
-不同市场的数据字段和交易日历无需在客户端自行拼接。期货、期权等非股票品种不支持
-复权。
-
-### History V2
-
-History V2 默认开启，普通安装自动包含 `zstandard`，无需增加协议参数：
-
-```python
-with rtdata.API(
-    token="your_token",
-    api_url="https://api.vrrv.ccwu.cc",
-    history_cache_enabled=False,
-) as api:
+with rtdata.API(token=os.environ["RTDATA_TOKEN"]) as api:
     rows = api.get_kline(
-        "000001.SZ", period="1d", start="2025-06-02", end="2025-06-17"
+        "000001.SZ", period="1m",
+        start="2026-11-02 09:30:00", end="2026-11-02 10:00:00",
+        adjust="forward", timeout=60.0,
     )
-    print(api.history_capability_state)
-    print(api.history_v2_eligible)
+    print("返回根数:", len(rows))
+    if rows:
+        print("实际范围:", rows[0].to_datetime(), rows[-1].to_datetime())
+    for k in rows[:3]:
+        print(k.to_datetime().isoformat(), k.open, k.high, k.low, k.close, k.volume)
 ```
 
-`history_v2_advertise` 负责能力协商，`history_v2_default` 决定协商成功后是否优先发
-送 V2 请求，两者默认均为 `True`。首次回源查询会在原查询超时内等待正在进行的协商。
-显式设置 `history_v2_default=False` 可保留 V1 查询；再设置 `history_v2_advertise=False`
-可完全关闭历史能力声明。协商超时、连接端不支持或缺少 Zstandard 时，SDK 自动回退 V1；可通过
-`history_capability_state` 和 `history_capability_fallback_reason` 查看原因。
+- 周期：`1m`、`5m`、`15m`、`30m`、`1h`、`2h`、`4h`、`1d`、`1w`、`1M`。
+  品种、周期及历史覆盖范围以服务实际支持为准。
+- `adjust="none"/"forward"/"backward"` 分别是不复权、前复权、后复权，适用于支持
+  复权的股票；非股票品种使用 `none`。
+- 无时区日期/时间按**证券市场时区**解释，不使用电脑本地时区；带时区输入保持真实时刻。
+  数值是**毫秒，不是秒**。日期 `end` 包含全天，带时间的 `end` 包含该端点。
+- 返回 `list[Kline]`，按时间升序；应检查实际返回区间，不保证一次调用覆盖全部请求历史。
+- 默认协商历史 V2，兼容 V1；无需客户端拆解 wire 协议。
+- 本地缓存默认位于 `~/.rtdata/history_utc_v1/`，按 `symbol + period + adjust` 区分。
+  只在指定起止范围时使用；`history_cache_enabled=False` 可关闭。
 
-### 本地历史缓存
+详见 [使用手册](docs/SDK_USAGE.md)、[历史示例](examples/history_kline.py)、
+[三市场复权](examples/history_adjust.py)。
 
-同时传入 `start` 和 `end` 时默认启用本地分段二进制缓存：
+## 市场与财务数据
 
-- 默认目录：`~/.rtdata/history_v1/`
-- 缓存键：`symbol + period + adjust`
-- 完整区间优先本地返回，缺口才回源
-- 不依赖 sqlite
+实时市场包括 A 股、港股、美股、国内期货、外汇、海外期货、加密货币。
+历史接口也可查询服务支持的期权等品种；市场权限、可用品种、周期与覆盖区间由服务决定。
+请使用 `api.symbols` 中的代码，不要自行拼接别名。
 
-关闭或指定目录：
+财务接口：`get_finance()`、`get_finance_ttm()`、`get_finance_ratios()`、
+`get_finance_pit()`。普通报表与 PIT 的 `query_type` 默认均为 `4`（三表），
+`1/2/3` 分别选择利润表/资产负债表/现金流量表。A/HK/US 字段可能不同；PIT 当前
+支持 A 股，港股、美股不可用时返回 `QueryError`。见 [财务示例](examples/finance_query.py)。
+
+## 连接、状态与错误
+
+`API` 懒连接，`with API(...)` 或首次订阅/查询时连接；也可显式 `connect()`。
+需细化心跳、自动重连或受控直连时使用 `RtdataClient`。
+默认服务发现、自动重连及订阅恢复，无需在 `on_connect` 中重复订阅。
+节点迁移须服务端共同支持；在途查询中断会报错，不会承诺自动重做。
 
 ```python
-api = rtdata.API(
-    token="your_token",
-    api_url="https://api.vrrv.ccwu.cc",
-    history_cache_enabled=False,
-)
+print(api.last_subscribe_requested)  # 期望订阅
+print(api.last_subscribe_confirmed)  # 当前连接已确认
+print(api.last_subscribe_rejected)   # 服务端拒绝，不包括待映射代码
+print(api.last_subscribe_warning)
+print(api.realtime_status)
 ```
 
-自定义缓存目录时改用 `history_cache_dir="/data/rtdata_cache"`；通常无需在关闭缓存时
-同时设置目录。
+订阅确认是异步的，紧接 `subscribe()` 读取时可能尚未更新。
+`on_token_status` / `token_status` 可观察账号状态；旧服务端不发送时为 `None`。
+主要异常：`AuthenticationError`、`DiscoveryError`、`ConnectionError`、
+`SymbolNotFoundError`、`QueryError`、`QueryTimeoutError`、`DisconnectedError`、
+`RealtimeUnavailableError`、`ProtocolError`；都继承 `RtdataError`。
 
-## 财务数据
+## 文档导航
 
-`query_type` 取值为：
-
-| 值 | 内容 |
-| ---: | --- |
-| 1 | income（利润表） |
-| 2 | balance（资产负债表） |
-| 3 | cashflow（现金流量表） |
-| 4 | all（三表，默认） |
-
-普通财务报表和 PIT 的默认值都是 `query_type=4`：
-
-```python
-with rtdata.API(token="your_token", api_url="https://api.vrrv.ccwu.cc") as api:
-    a_data = api.get_finance("600519.SH", report_period="2025-12-31")
-    hk_data = api.get_finance("00700.HK", report_period="2025-12-31")
-    us_data = api.get_finance("AAPL.US", report_period="2025-12-31")
-
-    ttm = api.get_finance_ttm("600519.SH", as_of_date="2025-12-31")
-    ratios = api.get_finance_ratios("00700.HK", report_period="2025-12-31")
-
-    # 默认 query_type=4；也可以显式传 1/2/3/4
-    pit = api.get_finance_pit("600519.SH", trade_date="2025-12-31")
-```
-
-港股、美股财务字段与 A 股不同，`FinanceData.data` 会保留原始字段；业务代码应按
-`market` 和实际字段判断，不要假设三地 schema 完全相同。港股、美股 PIT 当前会返回
-明确的 `QueryError`：
-
-```text
-PIT query is unavailable for hk_stock: source data has no announcement_date
-```
-
-## Token 状态
-
-SDK 可接收 token 有效、即将到期、过期、禁用或撤销状态通知：
-
-```python
-@api.on_token_status
-def on_token_status(status):
-    print(status.status, status.severity, status.expires_at)
-
-print(api.token_status)
-print(api.token_expires_at)
-```
-
-未收到状态通知时，`token_status` 保持为 `None`，不影响连接。
-
-## 异常语义
-
-- `AuthenticationError`：认证失败
-- `DiscoveryError`：服务发现失败
-- `ConnectionError`：TCP 连接失败或尚未连接
-- `SymbolNotFoundError`：品种不在 symbol map
-- `QueryError`：服务端明确拒绝，例如权限不足、非法 `query_type` 或 PIT 数据源不支持
-- `QueryTimeoutError`：等待响应超时
-- `DisconnectedError`：查询过程中连接中断
-- `ProtocolError`：协议或数据帧解析错误
-
-## 返回结构
-
-- `get_quote()`：`Quote | None`
-- `get_kline*()`：`list[Kline]`
-- `get_finance*()`：`FinanceData`
-- `Quote`：`symbol`、`symbol_id`、`bid`、`ask`、`last`、`volume`、`timestamp` 等
-- `Kline`：`symbol`、`timestamp`、`open`、`high`、`low`、`close`、`volume`、`turnover`、`open_interest`
-- `FinanceData`：`stock_code`、`report_period`、`data`
-
-`API` 和 `RtdataClient` 都支持 context manager；非 context manager 用法结束时请调用
-`close()`。
-
-## 示例与文档
-
-- [详细使用说明](./docs/SDK_USAGE.md)
-- [Token 状态说明](./docs/TOKEN_STATUS.md)
-- [示例目录](./examples/)
-  - [`basic_usage.py`](./examples/basic_usage.py)：实时订阅
-  - [`history_kline.py`](./examples/history_kline.py)：时间范围历史查询
-  - [`history_adjust.py`](./examples/history_adjust.py)：A/HK/US 三市场复权
-  - [`history_v2.py`](./examples/history_v2.py)：History V2 协商与回退
-  - [`finance_query.py`](./examples/finance_query.py)：A/HK/US 财务、TTM、PIT、比率
-  - [`session_rehome.py`](./examples/session_rehome.py)：自动故障迁移与首选节点归位
-  - [`token_status.py`](./examples/token_status.py)：Token 状态通知
-
-运行示例前请打开对应 `.py` 文件，将顶部的 `TOKEN` 替换为真实 token；其他参数也可
-直接在文件顶部修改，然后直接运行 `python examples/文件名.py`。
+- [完整使用手册与参数默认值](docs/SDK_USAGE.md)
+- [时间、夏令时与市场代码](docs/TIME-AND-MARKETS.md)
+- [实时全字段、盘口与兼容性](docs/REALTIME-FULL-FIELDS.md)
+- [Token 状态](docs/TOKEN_STATUS.md)
+- [示例索引及运行方式](examples/README.md)
+- [交付核对](DELIVERY.md) / [开发流程](DEVELOPMENT.md)
+- [变更历史](CHANGELOG.md) / [已发布版本说明](docs/RELEASE-NOTES.md)

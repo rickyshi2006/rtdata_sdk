@@ -10,15 +10,18 @@ import rtdata
 from rtdata import FinanceData, QueryError
 
 
-TOKEN = "your_token"
-API_URL = "https://api.vrrv.ccwu.cc"
+if __package__:
+    from ._common import connection_options
+else:
+    from _common import connection_options
+
 REPORT_PERIOD = "2025-12-31"
 PIT_DATE = "2025-12-31"
 
 SECURITIES = (
     ("A 股", "600519.SH"),
     ("港股", "00700.HK"),
-    ("美股", "AAPL.US"),
+    ("美股", "AAPL"),
 )
 
 
@@ -46,7 +49,7 @@ def try_show(title: str, query) -> None:
 
 
 def main() -> None:
-    with rtdata.API(token=TOKEN, api_url=API_URL) as api:
+    with rtdata.API(**connection_options()) as api:
         for market, code in SECURITIES:
             print(f"\n== {market} {code} ==")
 

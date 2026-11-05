@@ -1,684 +1,257 @@
-# rtdata SDK 使用文档
+# rtdata SDK 使用手册
 
-## 1. 概述
+本文对应 main 源码，包版本号目前为 `0.3.7`。已发布 v0.3.7 不包含随后合入的
+`Quote/Kline.to_datetime()`；新示例须使用当前源码，安装见 [README](../README.md)。
+不把源码更新视为安装包已发布。Python 最低版本为 3.9。
 
-`rtdata` 是一个行情与财务数据 Python SDK，支持：
+## 1. 连接入口与生命周期
 
-- HTTPS 服务发现
-- TCP 实时行情订阅
-- 历史 K 线查询
-- 财务数据查询
-- 本地 symbol map 缓存
-- 本地历史分段二进制缓存
-- 自动重连与自动恢复订阅
-- History V2 能力协商、列式压缩和 V1 自动回退
-- 安全 session rehome（故障转移后回到账号首选节点）
-
-当前版本：`0.3.7`
-
-## 1.1 当前支持范围
-
-- 实时数据：A 股、港股、美股、期货、外汇（按账号权限）
-- 历史 K 线：A 股、港股、美股、期货、期权（按账号权限）
-- 历史复权：A 股、港股、美股的 `none` / `forward` / `backward`（按账号权限）
-- 财务数据：A 股、港股、美股（按账号权限）；不同市场的字段 schema 可能不同
-- PIT：当前支持 A 股；港股、美股暂不支持
-
-后续如有市场范围调整，再按实际能力更新文档。
-
-## 2. 安装
-
-### 2.1 本地开发安装
-
-```bash
-cd rtdata_sdk
-pip install -e .
-```
-
-### 2.2 安装 wheel
-
-```bash
-pip install rtdata-0.3.7-py3-none-any.whl
-```
-
-如已安装版本号更高的临时包，使用明确的 wheel 路径重装后重启 Python 或订阅进程：
-
-```bash
-python -m pip install --force-reinstall --no-cache-dir ./rtdata-0.3.7-py3-none-any.whl
-python -c "import rtdata; print(rtdata.__version__, rtdata.__file__)"
-```
-
-普通安装已包含 Zstandard，默认优先使用 History V2。旧 extra 安装命令仍兼容：
-
-```bash
-pip install "rtdata-0.3.7-py3-none-any.whl[history-v2]"
-```
-
-连接端不支持或协商超时时自动兼容 History V1，无需强制升级旧服务端。
-
-## 3. 两套入口
-
-### 3.1 推荐入口：`API`
-
-`API` 会自动管理连接，适合绝大多数业务代码。
+常规业务使用 `API(token=...)`，默认通过 HTTPS 服务发现连接行情节点。
+构造对象不联网；`connect()`、`with` 或首次订阅/查询才连接。退出时调用 `close()`。
+先注册事件，再连接，才能观察首次连接及登录状态通知。
 
 ```python
+import os
 import rtdata
 
-api = rtdata.API(
-    token="your_token",
-    api_url="https://api.vrrv.ccwu.cc",
-)
+api = rtdata.API(token=os.environ["RTDATA_TOKEN"])
+
+@api.on_connect
+def connected():
+    print("connected", api.current_node_id)
+
+try:
+    api.connect()
+    print(len(api.symbols))
+finally:
+    api.close()
 ```
 
-说明：
+`RtdataClient` 是底层入口，需显式 `connect()` 或使用 `with`。
+服务发现需要传 `api_url`；不传时按 `host/port` 直连，仅适合受控调试。
+同时传 `api_url` 和 `host/port` 时，以服务发现结果为准。
 
-- `API` 支持懒连接，首次 `subscribe()` / `get_kline()` / `get_finance()` 时会自动连接
-- 也可以先显式调用 `api.connect()`
-- 使用完成后应调用 `api.close()`，或直接使用 context manager
+### API 构造参数
 
-### 3.2 底层入口：`RtdataClient`
+下列默认值与代码同步测试。除 `token`、`api_url` 外均为关键字参数。
 
-适合需要更细控制的场景。
+| 参数 | 默认值 | 含义 |
+| --- | --- | --- |
+| `token` | 必填 | 接入 token |
+| `api_url` | `"https://api.vrrv.ccwu.cc"` | 服务发现地址 |
+| `async_callbacks` | `True` | 行情回调在独立分发线程执行 |
+| `callback_queue_size` | `1000` | 行情回调队列容量 |
+| `symbol_cache_dir` | `None` | 品种缓存根目录；默认 `~/.rtdata/` |
+| `history_cache_dir` | `None` | 历史缓存根目录，见缓存章节 |
+| `history_cache_enabled` | `True` | 允许使用本地历史缓存 |
+| `history_v2_advertise` | `True` | 声明历史 V2 能力 |
+| `history_v2_default` | `True` | 协商成功后优先历史 V2 |
+| `history_v2_max_block_bytes` | `262144` | 历史列式块协商大小（字节） |
+| `history_capability_ack_timeout` | `5.0` | 历史能力 ACK 等待秒数 |
+| `session_rehome_advertise` | `True` | 声明安全节点迁移能力 |
+| `session_capability_ack_timeout` | `5.0` | 节点迁移能力 ACK 等待秒数 |
+| `realtime_protocol` | `"auto"` | `auto`、`legacy`、`required_v2` |
 
-```python
-from rtdata import RtdataClient
+### RtdataClient 构造参数
 
-client = RtdataClient(
-    token="your_token",
-    api_url="https://api.vrrv.ccwu.cc",
-)
-client.connect()
-```
+与 API 同名参数默认值相同，但 `api_url` 默认为 `None`，并额外接受下列参数。
+`token/host/port` 可为位置参数，其余为关键字参数。
 
-## 4. 连接方式
+| 参数 | 默认值 | 含义 |
+| --- | --- | --- |
+| `api_url` | `None` | 设置后启用服务发现 |
+| `host` | `"127.0.0.1"` | 受控直连地址 |
+| `port` | `9100` | 受控直连端口 |
+| `heartbeat_interval` | `20.0` | 心跳间隔秒数 |
+| `auto_reconnect` | `True` | 自动重连 |
 
-### 4.1 HTTPS 服务发现模式
+普通安装包含 Zstandard；`history-v2` extra 仅保留旧安装命令兼容性。
+`market-time` extra 安装 IANA 时区数据，推荐 Windows 和精简系统使用。
 
-推荐。
-
-```python
-client = RtdataClient(
-    token="your_token",
-    api_url="https://api.vrrv.ccwu.cc",
-)
-client.connect()
-```
-
-连接流程：
-
-1. 加载本地 symbol map 缓存
-2. `POST /api/v1/connect` 获取 TCP 节点地址
-3. 按版本决定是否拉取新版 symbol map
-4. 建立 TCP 连接并认证
-
-连接后可查看当前接入节点：
-
-```python
-print(client.current_node_id)
-print(client.current_host)
-print(client.current_port)
-print(client.current_endpoint)
-```
-
-### 4.2 直连 TCP 模式
-
-仅建议内网调试或完全受控环境使用。
-
-```python
-client = RtdataClient(
-    token="your_token",
-    host="127.0.0.1",
-    port=9100,
-)
-client.connect()
-```
-
-> 如果同时传了 `api_url`，服务发现返回的 host/port 会覆盖构造参数中的 `host` 和 `port`。
-
-## 5. 构造参数
-
-### 5.1 `API(...)`
-
-```python
-API(
-    token: str,
-    api_url: str = "https://api.vrrv.ccwu.cc",
-    *,
-    async_callbacks: bool = True,
-    callback_queue_size: int = 1000,
-    symbol_cache_dir: str | None = None,
-    history_cache_dir: str | None = None,
-    history_cache_enabled: bool = True,
-    history_v2_advertise: bool = True,
-    history_v2_default: bool = True,
-    history_v2_max_block_bytes: int = 256 * 1024,
-    history_capability_ack_timeout: float = 1.0,
-    session_rehome_advertise: bool = True,
-    session_capability_ack_timeout: float = 1.0,
-)
-```
-
-### 5.2 `RtdataClient(...)`
-
-```python
-RtdataClient(
-    token: str,
-    host: str = "127.0.0.1",
-    port: int = 9100,
-    *,
-    api_url: str | None = None,
-    heartbeat_interval: float = 20.0,
-    auto_reconnect: bool = True,
-    symbol_cache_dir: str | None = None,
-    history_cache_dir: str | None = None,
-    history_cache_enabled: bool = True,
-    async_callbacks: bool = True,
-    callback_queue_size: int = 1000,
-    history_v2_advertise: bool = True,
-    history_v2_default: bool = True,
-    history_v2_max_block_bytes: int = 256 * 1024,
-    history_capability_ack_timeout: float = 1.0,
-    session_rehome_advertise: bool = True,
-    session_capability_ack_timeout: float = 1.0,
-)
-```
-
-## 6. 实时行情订阅
-
-### 6.1 订阅
-
-```python
-api.subscribe(["601919.SH", "rb2610.SHF", "EUR.USD"])
-```
-
-### 6.2 取消订阅
-
-```python
-api.unsubscribe(["601919.SH"])
-api.unsubscribe()   # 取消全部
-```
-
-### 6.3 回调
+## 2. 实时订阅与完整行情
 
 ```python
 @api.on_quote
 def on_quote(q):
-    print(q.symbol, q.last, q.bid, q.ask, q.volume, q.timestamp)
+    print(q.symbol, q.to_datetime().isoformat(timespec="milliseconds"), q.last)
+    if q.wire_version == 2:
+        print(dict(q.fields))
+
+api.subscribe(["601919.SH", "AAPL", "EUR.USD", "BTCUSDT.BINANCE"])
+# 在主线程继续业务/等待；结束后 close()。不要订阅后立刻退出 with 块。
 ```
 
-### 6.4 实时语义
+`subscribe(symbols)` / `unsubscribe(symbols=None)` 无返回值；不传取消列表即取消全部。
+`subscribe` 发出请求不等于服务端确认，更不等于已收到行情。
+`api.symbols` 返回 `{id: code}`；以该目录中的代码为准，不应使用 `EURUSD`、`BTC/USDT`
+等自行构造的别名。参见 [代码及市场时区](TIME-AND-MARKETS.md)。
 
-实时通道是“最新值优先”的快照流，不保证逐条完整回放。
+默认 `auto` 自动协商所有服务端声明支持的市场，支持 V2 时读取全字段；旧端可以回退。
+`legacy` 显式选择兼容六字段；`required_v2` 不接受回退，连接时等待协议协商。
+协议选择和市场权限不同，不能通过选择 V2 获得未授权市场。
 
-这意味着：
+| 接口 | 行为 |
+| --- | --- |
+| `get_quote(symbol)` | 读取当前内存快照，无数据返回 `None`；严格模式无 V2 快照则报错 |
+| `wait_for_quote(symbol, timeout=5.0)` | 等待可用缓存快照，不隐式订阅；失败抛 `RealtimeUnavailableError` |
+| `wait_for_realtime(timeout=6.0)` | 等待 V2 协商，不等待市场 ready 或首帧；包括 auto 回退在内的失败均报错 |
+| `realtime_status` | `mode/phase/negotiated/reason/generation/revision/tables` |
+| `realtime_statistics` | 只读统计：`rejected/cached_wire_bytes/tracked_symbols`，不是吞吐计数 |
+| `on_realtime_status` | 协议或分类状态变化回调 |
 
-- 你看到的是当前最新状态
-- 中间某些高频变化可能被覆盖
-- 如果客户端消费太慢，旧快照可能被丢弃
-- 极端情况下，服务端可能主动断开，然后 SDK 自动重连
+`realtime_status.tables` 按市场类别索引，各项含 `ready/reason/epoch/schema_id`。
+ready 不是单品种活跃保证。断开连接、认证失败、关闭会清理缓存，分类变更会使相关快照失效。
+应用自己留存的 `Quote` 是旧快照，不代表连接仍健康。
 
-如果你只关心“当前最新值”，推荐配合使用：
+### 数据模型
+
+- `Quote` 常用属性：`symbol/symbol_id/last/bid/ask/volume/timestamp`，以及
+  `open/high/low/prev_close/turnover` 和 `bid_prices/bid_volumes/ask_prices/ask_volumes`。
+- V2 `fields` 是只读映射，`available_fields` 是字段集合；以 `fields` 判断某字段是否真的存在，
+  不要仅靠继承自旧 Quote 的属性默认值判断可用性。
+- NULL 为 `None`，真实零保留为 `0`；不要直接对可能为空的价格用 `:.3f`。
+- V2 快照不可修改，导出用 `dict(q.fields)`，不要依靠旧 dataclass 导出获得全字段。
+- V1 只有兼容基础字段，未传输的属性默认值不代表真实观测。
+- 全字段、类别、档数、数量精度及别名见 [实时字段说明](REALTIME-FULL-FIELDS.md)。
 
 ```python
-quote = api.get_quote("rb2610.SHF")
+last = "N/A" if q.last is None else f"{q.last:.4f}"
+bid1 = q.bid_prices[0] if q.bid_prices else None
+oi = q.fields.get("open_interest")
 ```
 
-`get_quote()` 只返回 SDK 当前内存中的最新缓存，不会主动向服务端发起一次查询。通常需要先订阅过该 symbol。
+### 订阅状态与恢复
 
-### 6.5 订阅结果检查
+- `last_subscribe_requested`：全部当前期望订阅。
+- `last_subscribe_confirmed`：当前连接已确认，断线时清空。
+- `last_subscribe_rejected`：服务端拒绝的已发送品种，不含等待映射的品种。
+- `last_subscribe_warning`：部分拒绝、等待映射或发送失败提示。
 
-服务端可能只接受部分 symbol。
+这些状态异步更新；不要把订阅后立即读到的空列表当作最终结果。
+重连保留全部期望订阅，映射恢复后自动补订，不需要在 `on_connect` 中重复调用。
+所有输入均不在当前映射时，`subscribe` 抛出 `SymbolNotFoundError`，不接受该次调用；
+部分有效时保留其余代码的待补订意图。断线期间 `unsubscribe` 仍可取消恢复意图。
 
-```python
-api.subscribe(["601919.SH", "rb2610.SHF"])
+行情是最新值优先的快照流，不保证每个中间事件。慢回调会丢失中间状态；回调应轻量。
+`async_callbacks` 只针对行情分发，不意味着所有事件都在工作线程；连接、状态等回调
+也不能做阻塞查询。同步行情回调尤其不能调用查询或等待接口，否则会阻塞接收线程。
 
-print(api.last_subscribe_warning)
-print(api.last_subscribe_requested)
-print(api.last_subscribe_confirmed)
-print(api.last_subscribe_rejected)
-```
+## 3. 时间与历史查询
 
-常见拒绝原因：
-
-- token 没有对应市场权限
-- 超过最大订阅数
-- 服务端过滤该 symbol
-
-## 7. 历史 K 线查询
-
-### 7.1 推荐写法：按时间范围
+`Quote.timestamp`、`Kline.timestamp` 是 UTC epoch 毫秒。显示使用 `to_datetime()`，
+输入无时区历史时间按品种市场解释。不要固定加减 8 小时；完整规则及混合市场示例见
+[时间说明](TIME-AND-MARKETS.md)。旧服务端的错误时间编码不能靠该显示方法修复。
 
 ```python
-klines = api.get_kline(
-    symbol="000001.SZ",
-    period="1d",
-    start="2015-01-01",
-    end="2015-12-31",
-    adjust="none",
-    timeout=30.0,
+rows = api.get_kline(
+    "000001.SZ", period="1m", start="2026-11-02", end="2026-11-02",
+    timeout=60.0, adjust="forward",
 )
+if rows:
+    print(len(rows), rows[0].to_datetime(), rows[-1].to_datetime())
 ```
 
-### 7.2 支持周期
+### 查询参数
 
-- `1m`
-- `5m`
-- `15m`
-- `30m`
-- `1h`
-- `2h`
-- `4h`
-- `1d`
-- `1w`
-- `1M`
+`get_kline(symbol, period="1d", start=0, end=0, timeout=30.0, adjust="none")`
+返回按时间升序排列的 `list[Kline]`，可能为空；实际覆盖区间以返回结果为准。
+不要把查询成功当作请求区间内的全部数据一定可用。
 
-### 7.3 时间参数规则
+- 周期大小写敏感：`1m/5m/15m/30m/1h/2h/4h/1d/1w/1M`；`1M` 是月线。
+- 股票复权：`none` 不复权、`forward` 前复权、`backward` 后复权。
+  不支持复权的期货/期权等品种使用 `none`。
+- 起止可为毫秒、`datetime`、`date`、ISO 日期时间字符串，`end` 包含端点。
+- 默认 `0`（或省略）表示未指定端点，不是强制指定 1970 年；`end=None` 不代表精确的
+  当前时刻。如需“至今”，显式使用 `datetime.now(timezone.utc)`。
+- `timeout` 是查询阶段的预算，包含等待正在进行的历史协商；API 首次服务发现/连接
+  另有自身等待时间。不要假设它严格覆盖首次 API 调用的全部墙钟耗时。
+- 兼容 `start_time/end_time`，不要与对应的新参数重复传入。
 
-`start` 和 `end` 支持：
-
-- 毫秒时间戳
-- `datetime`
-- `date`
-- `"YYYY-MM-DD"`
-- `"YYYY-MM-DD HH:MM"`
-- `"YYYY-MM-DD HH:MM:SS"`
-- `"YYYY-MM-DD HH:MM:SS.ffffff"`
-
-规则：
-
-- 如果只传日期，自动扩展为当天整天
-- 如果带时间，按精确时间截取
-- `start` 必须小于等于 `end`
-- `adjust` 支持 `none` / `forward` / `backward`
-- 返回结果按时间升序排列，以实际返回的数据为准。
-- `timeout` 是一次调用的总查询预算。
-
-### 7.4 复权示例
+快捷接口也返回 `list[Kline]`，实际覆盖范围仍以返回结果为准：
 
 ```python
-none_rows = api.get_kline(
-    "000001.SZ",
-    period="1d",
-    start="2015-01-01",
-    end="2015-03-31",
-    adjust="none",
-)
-
-forward_rows = api.get_kline(
-    "000001.SZ",
-    period="1d",
-    start="2015-01-01",
-    end="2015-03-31",
-    adjust="forward",
-)
-
-backward_rows = api.get_kline(
-    "000001.SZ",
-    period="1d",
-    start="2015-01-01",
-    end="2015-03-31",
-    adjust="backward",
-)
+rows = api.get_kline_range("000001.SZ", start="2026-11-02", end="2026-11-03")
+rows = api.get_kline_for_day("000001.SZ", day="2026-11-02", period="1m")
+rows = api.get_kline_for_today("000001.SZ", period="1m")
 ```
 
-限制：
-
-- A 股、港股、美股支持 `forward` / `backward`
-- 期货、期权等非股票品种不支持复权
-
-### 7.5 分钟线示例
-
-```python
-klines = api.get_kline(
-    "rb2610.SHF",
-    period="1m",
-    start="2026-04-29",
-    end="2026-04-30",
-)
-```
-
-### 7.6 兼容参数
-
-`get_kline()` 仍兼容旧参数名：
-
-- `start_time`
-- `end_time`
-
-## 8. 历史缓存
-
-### 8.1 默认行为
-
-当同时传入 `start` 和 `end` 时，历史查询默认启用本地缓存：
-
-- 默认根目录：`~/.rtdata/`
-- 历史缓存目录：`~/.rtdata/history_v1/`
-- 缓存格式：分段二进制文件
-- 缓存维度：`symbol + period + adjust`
-
-### 8.2 命中规则
-
-- 优先使用已验证的本地缓存；无法满足查询时向服务端请求数据。
-- 再次请求相同区间：优先读本地
-- 只有同时给出 `start` 和 `end` 时才会走这套缓存
-
-### 8.3 关闭缓存
-
-```python
-api = rtdata.API(
-    token="your_token",
-    api_url="https://api.vrrv.ccwu.cc",
-    history_cache_enabled=False,
-)
-```
-
-### 8.4 指定缓存目录
-
-```python
-api = rtdata.API(
-    token="your_token",
-    api_url="https://api.vrrv.ccwu.cc",
-    history_cache_dir="/data/rtdata_cache",
-)
-```
-
-### 8.5 History V2
-
-History V2 是默认优先的列式压缩历史流。普通安装包含所需依赖，两个公开入口均无需
-额外设置协议参数；协商成功使用 V2，旧服务端仍兼容 V1：
-
-```python
-with rtdata.API(
-    token="your_token",
-    api_url="https://api.vrrv.ccwu.cc",
-    history_cache_enabled=False,
-) as api:
-    rows = api.get_kline(
-        "000001.SZ", period="1d", start="2025-06-02", end="2025-06-17"
-    )
-    print(api.history_capability_state)
-    print(api.history_v2_eligible)
-    print(api.history_capability_fallback_reason)
-```
-
-`history_v2_advertise` 负责能力协商，`history_v2_default` 决定协商成功后是否优先发送
-V2，两者默认均为 `True`。首次回源请求等待正在进行的协商，计入原查询超时。
-设置 `history_v2_default=False` 可强制使用 V1 查询；同时设置 `history_v2_advertise=False`
-可关闭能力声明。手工跳过依赖导致缺少 Zstandard、连接端不支持或 ACK 超时都会回退到 V1；回退原因可通过
-`history_capability_fallback_reason` 查看。
-
-## 9. 财务查询
-
-### 9.1 财务报表
-
-```python
-fd = api.get_finance(
-    stock_code="600519.SH",
-    report_period="2017-12-31",
-    query_type=4,
-)
-```
-
-`query_type` 取值：`1=income`、`2=balance`、`3=cashflow`、`4=all`。普通财务报表和
-PIT 的默认值均为 `4`。
-
-### 9.2 TTM
-
-```python
-fd = api.get_finance_ttm(
-    stock_code="000001.SZ",
-    as_of_date="2017-12-31",
-)
-```
-
-### 9.3 Point-in-Time
-
-```python
-fd = api.get_finance_pit(
-    stock_code="601318.SH",
-    trade_date="2017-06-30",
-)
-```
-
-也可以显式传 `query_type=1/2/3/4`。A 股、港股、美股的财务字段不同，客户端应按
-返回的 `FinanceData.data` 实际字段处理。港股、美股 PIT 当前会返回明确的
-`QueryError`，例如：
-
-```text
-PIT query is unavailable for hk_stock: source data has no announcement_date
-```
-
-TTM 和财务比率接口同样支持 A/HK/US，但字段不保证三地完全相同。
-
-### 9.4 财务比率
-
-```python
-fd = api.get_finance_ratios(
-    stock_code="600036.SH",
-    report_period="2017-12-31",
-)
-```
-
-## 10. 连接事件
-
-```python
-@api.on_connect
-def on_connect():
-    print("connected")
-
-@api.on_disconnect
-def on_disconnect(reason):
-    print("disconnected:", reason)
-
-@api.on_error
-def on_error(err):
-    print("error:", err)
-```
-
-说明：
-
-- `on_connect`：首次连接成功或重连恢复成功
-- `on_disconnect`：连接被断开
-- `on_error`：订阅部分失败等非致命错误提示
-- `on_token_status`：Token 有效、即将到期、过期、禁用或撤销通知
-
-```python
-@api.on_token_status
-def on_token_status(status):
-    print(status.status)
-    print(status.expires_at)
-```
-
-## 11. 自动重连行为
-
-当连接断开时，SDK 会：
-
-1. 如果配置了 `api_url`，先重新做 discovery
-2. 重新 TCP 连接
-3. 重新认证
-4. 按需刷新 symbol map
-5. 自动恢复已有订阅
-
-因此断线后你通常不需要手动再次 `subscribe()`。
-
-SDK 分别保存期望订阅和当前连接已确认的订阅。符号表暂时缺少某个代码时，
-`last_subscribe_warning` 会提示等待映射；代码不会从期望订阅中删除。
-配置 `api_url` 时，每个连接代次最多主动补查一次映射，不阻塞行情接收；
-后续收到映射更新也会自动补订，服务端已拒绝的品种不会因此反复重试。
-
-- `last_subscribe_requested`：尚未取消的全部期望订阅。
-- `last_subscribe_confirmed`：当前连接已确认的订阅，断线时清空。
-- `last_subscribe_rejected`：服务端未接受的已发送品种，不包含等待映射的品种。
-- `unsubscribe()`：断线期间同样取消恢复意图；迟到确认不会恢复已取消品种。
-- 全部输入代码均不在当前映射中时，`subscribe()` 仍抛出 `SymbolNotFoundError`，
-  不接受该次调用；部分代码有效时，暂缺代码保留为待补订。
-
-### 11.1 安全节点迁移
-
-SDK 默认允许会话从异常节点迁移到健康节点，并在首选节点恢复后自动归位：
-
-```python
-api = API(
-    token="your_token",
-    api_url="https://api.vrrv.ccwu.cc",
-)
-```
-
-只有同时配置 `api_url` 且 `auto_reconnect=True` 才会向服务端声明该能力。收到迁移指令后，
-SDK 会终止当前在途查询、强制重新 discovery、重新认证并恢复订阅。迁移 discovery
-失败或返回的不是指定目标节点时，不会回落到旧节点地址；固定 `host:port` 客户端
-不会声明该能力，也不会被主动迁移。如需对 discovery 客户端关闭自动
-迁移，可显式设置 `session_rehome_advertise=False`。
-
-连接后可查看协商状态：
-
-```python
-print(api.session_capability_state)
-print(api.session_rehome_negotiated)
-print(api.session_capability_fallback_reason)
-```
-
-## 12. 异常语义
-
-### 12.1 `AuthenticationError`
-
-- token 无效
-- token 已被占用
-- 认证超时
-
-### 12.2 `DiscoveryError`
-
-- discovery 域名不可达
-- HTTP 失败
-- 服务发现返回异常
-
-### 12.3 `QueryError`
-
-服务端明确拒绝当前查询，例如：
-
-- `Market not allowed`
-- `History download busy, retry later`
-- `Upstream query channel unavailable`
-
-### 12.4 `QueryTimeoutError`
-
-只表示“等待响应超时”，不代表服务端一定拒绝。
-
-### 12.5 `DisconnectedError`
-
-查询过程中连接被断开。
-
-## 13. 常见排查建议
-
-### 13.1 订阅没有收到数据
-
-先看：
-
-```python
-print(api.last_subscribe_warning)
-print(api.last_subscribe_rejected)
-```
-
-再确认：
-
-- token 是否有对应市场权限
-- symbol 是否存在于 symbol map
-- 是否超过订阅数限制
-
-### 13.2 历史查询失败
-
-优先区分异常类型：
-
-- `QueryError`：服务端显式拒绝，直接看错误文本
-- `QueryTimeoutError`：等待超时
-- `DisconnectedError`：连接中断
-
-### 13.3 怀疑缓存影响测试
-
-关闭本地历史缓存重试：
-
-```python
-api = rtdata.API(
-    token="your_token",
-    api_url="https://api.vrrv.ccwu.cc",
-    history_cache_enabled=False,
-)
-```
-
-## 14. Context Manager
-
-```python
-import rtdata
-
-with rtdata.API(token="your_token", api_url="https://api.vrrv.ccwu.cc") as api:
-    rows = api.get_kline("000001.SZ", period="1d", start="2015-01-01", end="2015-12-31")
-```
-
-底层客户端也支持：
-
-```python
-from rtdata import RtdataClient
-
-with RtdataClient(token="your_token", api_url="https://api.vrrv.ccwu.cc") as client:
-    print(client.current_endpoint)
-```
-
-## 15. 数据结构
-
-### 15.1 `Quote`
-
-- `symbol`
-- `symbol_id`
-- `bid`
-- `ask`
-- `last`
-- `volume`
-- `timestamp`
-
-### 15.2 `Kline`
-
-- `symbol`
-- `timestamp`
-- `open`
-- `high`
-- `low`
-- `close`
-- `volume`
-- `turnover`
-- `open_interest`
-
-### 15.3 `FinanceData`
-
-- `stock_code`
-- `report_period`
-- `data`
-
-## 16. 返回格式说明
-
-- `subscribe(symbols)`：无返回值；实时数据通过 `@api.on_quote` 回调推送，回调参数类型是 `Quote`
-- `unsubscribe(symbols=None)`：无返回值
-- `get_quote(symbol)`：返回 `Quote` 或 `None`
-- `get_kline(...)`：返回 `list[Kline]`
-- `get_kline_range(...)`：返回 `list[Kline]`
-- `get_kline_for_day(...)`：返回 `list[Kline]`
-- `get_kline_for_today(...)`：返回 `list[Kline]`
-- `get_finance(...)`：返回 `FinanceData`
-- `get_finance_ttm(...)`：返回 `FinanceData`
-- `get_finance_pit(...)`：返回 `FinanceData`
-- `get_finance_ratios(...)`：返回 `FinanceData`
-- `symbols`：返回 `dict[int, str]`，即 `{symbol_id: symbol_code}`
-- `last_subscribe_requested`：返回 `list[str]`
-- `last_subscribe_confirmed`：返回 `list[str]`
-- `last_subscribe_rejected`：返回 `list[str]`
-- `last_subscribe_warning`：返回 `str | None`
-
-## 17. 示例文件
-
-- `examples/basic_usage.py`
-- `examples/history_kline.py`
-- `examples/history_adjust.py`
-- `examples/history_v2.py`
-- `examples/finance_query.py`
-- `examples/session_rehome.py`
-- `examples/test_subscribe2.py`
-- `examples/diagnose_realtime_stall.py`
+`get_kline_for_day` 传日期字符串或 `date` 才是整天；传带时间的 `datetime` 不会去掉时间。
+`get_kline_for_today` 使用品种市场的当前日期。国内期货自然日范围不等同于交易日夜盘归属。
+
+`Kline` 字段为 `symbol/timestamp/open/high/low/close/volume/turnover/open_interest`。
+`open_interest` 为持仓量；对不提供该字段的历史结果可能为 `0`，不能据此判断没有持仓。
+日/周/月线的时间是服务返回的 K 线标签，SDK 显示时不会移动到开盘时间或重新取整。
+
+### 历史 V2 与缓存
+
+默认协商并优先历史 V2，普通安装自带 Zstandard。协商不支持/超时可兼容 V1；
+手工省略依赖、缺少 Zstandard 也会回退。用 `history_capability_state`、
+`history_v2_eligible`、`history_capability_fallback_reason` 观察，不能把 eligible
+当成某次缓存读取真的经过了 V2 网络请求。
+
+`history_v2_default=False` 选择兼容查询；再设 `history_v2_advertise=False` 可关闭声明。
+一般无需调整，也不能通过切换协议改变查询权限。
+
+本地分段缓存使用 `symbol + period + adjust` 分组，仅在指定有效起止范围时启用：
+
+- 默认目录 `~/.rtdata/history_utc_v1/`，不复用也不删除旧 `history_v1`。
+- 自定义 `history_cache_dir` 是根目录，实际在其下创建 `history_utc_v1/`。
+  未指定时沿用 `symbol_cache_dir`，再未指定才使用 `~/.rtdata/`。
+- 优先使用可验证覆盖的缓存；不满足时请求服务，不承诺只查询缺口或自动获得全部历史。
+- 缓存不是实时刷新机制；复权修订、历史更正等核验可设置 `history_cache_enabled=False`。
+  未闭合 K 线测试也应关闭缓存。不要共享可写缓存给不可信用户。
+
+## 4. 财务数据
+
+| 方法 | 可选日期参数 | 返回 |
+| --- | --- | --- |
+| `get_finance(stock_code, report_period="", query_type=4, timeout=30.0)` | 报告期 | `FinanceData` |
+| `get_finance_ttm(stock_code, as_of_date="", timeout=30.0)` | 截止日期 | `FinanceData` |
+| `get_finance_pit(stock_code, trade_date="", query_type=4, timeout=30.0)` | 时点日期 | `FinanceData` |
+| `get_finance_ratios(stock_code, report_period="", timeout=30.0)` | 报告期 | `FinanceData` |
+
+日期使用 `YYYY-MM-DD`。`query_type=1/2/3/4` 分别为 income/balance/cashflow/all。
+`FinanceData` 包含 `stock_code/report_period/data`，业务字段读取 `data`。
+支持的 A/HK/US 财务字段可能不同；PIT 当前仅 A 股，港股、美股不支持时抛 `QueryError`。
+不要把未支持接口的错误吞掉后伪装为全零报表。
+
+## 5. 连接事件与错误
+
+装饰器签名：`on_quote(q)`、`on_connect()`、`on_disconnect(reason)`、`on_error(err)`、
+`on_token_status(status)`、`on_realtime_status(status)`。回调应在连接前注册。
+Token 说明见 [TOKEN_STATUS](TOKEN_STATUS.md)；未收到通知时 `token_status=None`。
+
+`is_connected` 表示认证连接可用，不保证每个市场推送活跃。诊断属性还有
+`current_node_id/current_host/current_port/current_endpoint/gateway_version/protocol_features`。
+分享日志前注意隐藏 token 和连接地址。
+
+自动重连重新服务发现、认证和恢复订阅。服务端支持时可进行安全节点迁移，需同时启用
+服务发现及底层 `auto_reconnect=True`；固定地址或显式关闭 `session_rehome_advertise`
+不声明此能力。可查看 `session_capability_state/session_rehome_negotiated/session_capability_fallback_reason`。
+在途查询可能因断线/迁移中断，调用方按业务需要有界重试；不要无休止重发所有查询。
+
+| 异常 | 含义 |
+| --- | --- |
+| `AuthenticationError` | 认证失败或认证等待超时 |
+| `DiscoveryError` | 服务发现失败 |
+| `ConnectionError` | 未连接、连接失败或正在重连（这是 rtdata 异常） |
+| `SymbolNotFoundError` | 当前映射找不到请求代码 |
+| `QueryError` | 查询被拒绝或响应未通过查询校验 |
+| `QueryTimeoutError` | 查询等待超时，不等同于被拒绝 |
+| `DisconnectedError` | 在途查询连接中断 |
+| `RealtimeUnavailableError` | 严格实时模式或实时等待条件未满足 |
+| `ProtocolError` | 协议解析错误 |
+
+以上均继承 `RtdataError`。非法参数还可能抛 Python `ValueError/TypeError`；
+时区数据库缺失会抛 `ZoneInfoNotFoundError`。
+
+## 6. 排查顺序
+
+1. 打印 `rtdata.__version__` 和 `rtdata.__file__`，确认运行的解释器和安装位置。
+2. 查看 `is_connected`、订阅 requested/confirmed/rejected/warning，区分待确认与被拒绝。
+3. 查看 `realtime_status`、实际 `q.wire_version`、字段空值及证券目录；不要只看价格是否变化。
+4. 对比各品种回调间隔；`timestamp` 可在盘口变化时重复，行情年龄不等于网络延迟。
+5. 历史问题先区分拒绝、超时、断线，再关闭缓存核验实际返回范围。
+
+可运行 [诊断示例](../examples/diagnose_realtime_stall.py)，它只使用公开状态，不做时区偏移补丁。
+全部示例及其适用场景见 [示例索引](../examples/README.md)。

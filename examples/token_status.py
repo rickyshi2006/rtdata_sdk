@@ -11,8 +11,11 @@ import rtdata
 from rtdata import TokenStatus
 
 
-TOKEN = "your_token"
-API_URL = "https://api.vrrv.ccwu.cc"
+if __package__:
+    from ._common import connection_options
+else:
+    from _common import connection_options
+
 LISTEN_SECONDS = 300.0  # 设为 0 表示持续监听
 
 
@@ -28,7 +31,7 @@ def main() -> None:
         format="%(asctime)s [%(levelname)s] %(message)s",
     )
 
-    api = rtdata.API(token=TOKEN, api_url=API_URL)
+    api = rtdata.API(**connection_options())
 
     @api.on_connect
     def on_connect() -> None:
@@ -48,7 +51,7 @@ def main() -> None:
             f"severity={status.severity} "
             f"reason={status.reason} "
             f"expires_at={format_expires_at(status)} "
-            f"remaining={remaining_text} "
+            f"remaining_at_notification={remaining_text} "
             f"message={status.message!r}",
             flush=True,
         )

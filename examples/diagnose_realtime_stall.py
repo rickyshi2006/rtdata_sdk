@@ -1,10 +1,8 @@
-"""诊断实时订阅是否发生客户端本地停读/停回调。
+"""观察各品种回调空档，不把行情时间差误判为网络延迟。
 
-输出包含:
-- recv: 客户端本地收到并执行回调的时间
-- quote: 行情包内时间戳
-- lag_ms: recv 与 quote 的差值
-- monitor: SDK 内部已收消息数、行情数、回调队列长度、最新缓存年龄
+只读取 SDK 公共状态，每 5 秒汇总，不逐帧打印以免诊断本身拖慢回调。
+event_age_ms 是本机 UTC 与行情标签之差，包含数据年龄和时钟差，非网络 RTT。
+callback_gap_s 才是本进程观察到的回调空档；休市也会产生长空档。
 """
 
 import logging
@@ -13,99 +11,84 @@ import time
 from datetime import datetime, timezone
 
 import rtdata
-from rtdata import Quote
+
+if __package__:
+    from ._common import connection_options, format_quote, require_datetime
+else:
+    from _common import connection_options, format_quote, require_datetime
 
 
-TOKEN = "your_token"
-API_URL = "https://api.vrrv.ccwu.cc"
-SYMBOLS = ["601919.SH"]
-SYNC_CALLBACKS = False
-CALLBACK_QUEUE_SIZE = 1000
-MONITOR_INTERVAL = 1.0
+SYMBOLS = ["AAPL", "EUR.USD", "BTCUSDT.BINANCE", "BTCUSDT.OKX"]
+MONITOR_INTERVAL = 5.0
+OBSERVE_SECONDS = 300.0  # 0: 持续观察。
 
 
-def fmt_quote_ts(ts_ms: int) -> str:
-    dt = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
-    return dt.strftime("%H:%M:%S.%f")[:-3]
+class Observations:
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._rows = {}
+
+    def record(self, quote):
+        now = time.monotonic()
+        with self._lock:
+            previous = self._rows.get(quote.symbol)
+            count, gap = (0, 0.0) if previous is None else (
+                previous[0], max(previous[2], now - previous[1])
+            )
+            self._rows[quote.symbol] = (count + 1, now, gap, quote)
+
+    def snapshot(self):
+        with self._lock:
+            return dict(self._rows)
 
 
-def fmt_recv_ts() -> str:
-    return datetime.now().strftime("%H:%M:%S.%f")[:-3]
-
-
-def main() -> None:
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
-
-    api = rtdata.API(
-        token=TOKEN,
-        api_url=API_URL,
-        async_callbacks=not SYNC_CALLBACKS,
-        callback_queue_size=CALLBACK_QUEUE_SIZE,
+def report(api, observations, started):
+    now = time.monotonic()
+    utc_now = datetime.now(timezone.utc)
+    print(
+        f"[{utc_now.isoformat(timespec='milliseconds')}] "
+        f"connected={api.is_connected} phase={api.realtime_status.phase} "
+        f"statistics={dict(api.realtime_statistics)}"
     )
-
-    stop_event = threading.Event()
-
-    @api.on_quote
-    def on_quote(q: Quote):
-        recv_ms = int(time.time() * 1000)
-        lag_raw_ms = recv_ms - int(q.timestamp)
-        lag_beijing_adj_ms = recv_ms - (int(q.timestamp) - 8 * 3600 * 1000)
+    print(
+        f"confirmed={api.last_subscribe_confirmed} rejected={api.last_subscribe_rejected} "
+        f"warning={api.last_subscribe_warning!r}"
+    )
+    rows = observations.snapshot()
+    for symbol in SYMBOLS:
+        item = rows.get(symbol)
+        if item is None:
+            print(f"  {symbol}: no callback, observed_s={now - started:.1f}")
+            continue
+        count, last_recv, max_gap, quote = item
+        silence = now - last_recv
+        event_age_ms = int(utc_now.timestamp() * 1000) - quote.timestamp
         print(
-            f"[recv={fmt_recv_ts()}] [quote={fmt_quote_ts(int(q.timestamp))}] "
-            f"[lag_raw_ms={lag_raw_ms:>8d}] [lag_bj_adj_ms={lag_beijing_adj_ms:>6d}] {q.symbol:<10s} "
-            f"last={q.last:.3f} bid={q.bid:.3f} ask={q.ask:.3f} vol={q.volume}",
-            flush=True,
+            f"  callbacks={count} silence_s={silence:.1f} "
+            f"max_callback_gap_s={max(max_gap, silence):.1f} event_age_ms={event_age_ms} "
+            f"{format_quote(quote)}"
         )
 
-    @api.on_connect
-    def on_connect():
-        print(f">> Connected recv={fmt_recv_ts()}", flush=True)
 
-    @api.on_disconnect
-    def on_disconnect(reason):
-        print(f">> Disconnected recv={fmt_recv_ts()} reason={reason}", flush=True)
-
-    def monitor_loop():
-        client = api._client
-        while not stop_event.wait(MONITOR_INTERVAL):
-            conn = client._conn
-            is_connected = bool(conn and conn.connected)
-            callback_qsize = client._callback_queue.qsize() if client._async_callbacks else 0
-            with client._stats_lock:
-                messages_received = client._messages_received
-                quotes_received = client._quotes_received
-                quotes_dropped = client._quotes_dropped
-            subscribed = client.get_subscribed_symbols()
-            latest_desc = 'none'
-            if SYMBOLS:
-                latest = client.get_quote(SYMBOLS[0])
-                if latest is not None:
-                    age_ms = int(time.time() * 1000) - int(latest.timestamp)
-                    latest_desc = f'{latest.symbol}@{fmt_quote_ts(int(latest.timestamp))}/raw_age={age_ms}ms/bj_adj_age={age_ms + 8 * 3600 * 1000}ms'
-            print(
-                f"[monitor recv={fmt_recv_ts()}] connected={is_connected} "
-                f"subs={subscribed} msgs={messages_received} quotes={quotes_received} "
-                f"dropped={quotes_dropped} cb_q={callback_qsize} latest={latest_desc}",
-                flush=True,
-            )
-
-    t = threading.Thread(target=monitor_loop, name='diag-monitor', daemon=True)
-    t.start()
-
-    print(f'Subscribing: {SYMBOLS}', flush=True)
-    api.connect()
-    api.subscribe(SYMBOLS)
-
+def main():
+    require_datetime()
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+    api = rtdata.API(**connection_options())
+    observations = Observations()
+    api.on_quote(observations.record)
     try:
+        api.subscribe(SYMBOLS)
+        started = time.monotonic()
         while True:
-            time.sleep(1)
+            time.sleep(MONITOR_INTERVAL)
+            report(api, observations, started)
+            if OBSERVE_SECONDS > 0 and time.monotonic() - started >= OBSERVE_SECONDS:
+                break
     except KeyboardInterrupt:
         pass
     finally:
-        stop_event.set()
         api.close()
-        print('Done', flush=True)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

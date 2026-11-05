@@ -1,5 +1,10 @@
 # Realtime quote fields
 
+This document follows main source. `Quote/Kline.to_datetime()` is not included
+in the published v0.3.7 wheel; see [installation](../README.md) and the
+[market time guide](TIME-AND-MARKETS.md). Runnable examples with cleanup and
+observation loops are indexed in [examples](../examples/README.md).
+
 Both `API` and `RtdataClient` default to automatic V2 full-field negotiation.
 Existing connection and subscription calls need no additional argument.
 
@@ -14,6 +19,7 @@ def on_quote(quote):
     print(dict(quote.fields))
 
 api.subscribe(["600519.SH"])
+# Continue application work/waiting, then close the API in a finally block.
 ```
 
 ## Protocol selection
@@ -39,6 +45,18 @@ No market-enable or provider-selection argument is needed. Server-side routing
 selects the data provider; client capability negotiation only selects the format.
 The additional schemas support up to ten book levels, signed 64-bit quantities
 and quantity precision fields. Actual available depth depends on the instrument.
+
+| Public category | Schema | Defined book levels per side |
+| --- | ---: | ---: |
+| `cn_equity`, `hk_equity`, `us_equity` | 1 | 5 |
+| `futures` | 2 | 5 |
+| `fx` | 3 | 1 |
+| `overseas_futures` | 4 | 10 |
+| `crypto` | 5 | 10 |
+
+These are schema capacities, not guaranteed available depth. US equities still
+use the five-level public schema even if more levels are available elsewhere.
+Null positions must not be removed and shifted to a different level.
 
 The successful login response may advertise supported market IDs and frame
 limits. These are re-evaluated on every connection. Without this metadata, the
@@ -94,8 +112,9 @@ Extended quotes are read-only `Quote` instances. Available fields can be read
 as attributes or through the immutable `quote.fields` mapping. Export with
 `dict(quote.fields)`; legacy dataclass serialization is not a complete export.
 
-- Missing values are `None`; real zero stays zero. Unavailable fields are absent
-  from `fields` and raise `AttributeError`. Inspect `available_fields` first.
+- NULL values are `None`; real zero stays zero. Fields outside the schema are
+  absent from `fields`. Use this mapping or `available_fields` to check support:
+  inherited compatibility attributes can retain defaults even when not supplied.
 - Floating-point values keep double precision; integer values remain Python
   integers. Negative values, NaN and infinity are not replaced with zero.
 - Existing aliases remain: `bid=bid_price1`, `ask=ask_price1`,
