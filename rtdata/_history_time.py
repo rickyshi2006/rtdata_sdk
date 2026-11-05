@@ -1,8 +1,8 @@
-"""History API times are market-local inputs and UTC instants on the wire."""
+"""Market-local history inputs and display; UTC instants on the wire."""
 
 import math
 import re
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone, tzinfo
 from zoneinfo import ZoneInfo
 
 _EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
@@ -19,9 +19,13 @@ _FUTURES_ZONES = {
 _UTC_FEEDS = {'CRYPTO', 'BITFLYER', 'BITFINEX', 'BITSTAMP', 'BTCTURK', 'GEMINI',
               'HUOBI', 'KUCOIN', 'LBANK', 'OKX', 'BINANCE', 'BINANCEUS',
               'HASHKEY', 'COINBASE', 'BITGO', 'CFBM', 'FX'}
+_CURRENCIES = frozenset(('USD EUR GBP JPY CHF CAD AUD NZD CNH CNY HKD SGD NOK SEK DKK '
+                         'ZAR MXN TRY RUB BRL INR KRW TWD THB PLN HUF CZK ILS AED SAR '
+                         'IDR MYR PHP XAU XAG XPT XPD').split())
 
 
 def market_zone(symbol: str) -> ZoneInfo:
+    symbol = symbol.upper()
     _, _, suffix = symbol.rpartition('.')
     if suffix in _CHINA_SUFFIXES or symbol.split('.')[0] in _CHINA_EXCHANGES:
         return ZoneInfo('Asia/Shanghai')
@@ -31,11 +35,28 @@ def market_zone(symbol: str) -> ZoneInfo:
         return ZoneInfo(_FUTURES_ZONES[suffix])
     if suffix in _UTC_FEEDS:
         return ZoneInfo('UTC')
+    parts = symbol.split('.')
+    if len(parts) == 2 and all(part in _CURRENCIES for part in parts):
+        return ZoneInfo('UTC')
     if suffix in {'CCDDEX', 'CCPT', 'CCPRINCA'}:
         raise ValueError(f'Unconfirmed market for {symbol!r}; use UTC milliseconds or aware datetime')
     if re.fullmatch(r'[A-Za-z][A-Za-z0-9.\-]{0,31}', symbol):
         return ZoneInfo('America/New_York')
     raise ValueError(f'Unknown market for {symbol!r}; use UTC milliseconds or aware datetime')
+
+
+def timestamp_datetime(timestamp_ms: int, *, symbol: str, tz=None) -> datetime:
+    """Render an instant; never shift the stored/wire timestamp."""
+    if isinstance(timestamp_ms, bool) or not isinstance(timestamp_ms, int):
+        raise TypeError('Timestamp must be integer UTC milliseconds')
+    zone = market_zone(symbol) if tz is None else ZoneInfo(tz) if isinstance(tz, str) else tz
+    if not isinstance(zone, tzinfo):
+        raise TypeError('tz must be an IANA timezone name or tzinfo')
+    instant = _EPOCH + timedelta(milliseconds=timestamp_ms)
+    result = instant.astimezone(zone)
+    if result.utcoffset() is None:
+        raise ValueError('tz must produce an aware datetime')
+    return result
 
 
 def _milliseconds(value: datetime) -> int:

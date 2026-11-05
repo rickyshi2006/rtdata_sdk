@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Optional, List
 from types import MappingProxyType
+from ._history_time import timestamp_datetime
 
 
 @dataclass(frozen=True)
@@ -62,6 +63,10 @@ class Quote:
         price = lambda value: "None" if value is None else f"{value:.4f}"
         return (f"Quote({self.symbol}: last={price(self.last)}, "
                 f"bid={price(self.bid)}, ask={price(self.ask)}, vol={self.volume})")
+
+    def to_datetime(self, tz=None) -> datetime:
+        """Return aware market time, or use an explicit IANA zone/tzinfo."""
+        return timestamp_datetime(self.timestamp, symbol=self.symbol, tz=tz)
 
     @property
     def fields(self):
@@ -162,6 +167,10 @@ class Kline:
     turnover: float     # 成交额
     open_interest: int  # 持仓量
     symbol: str = ""    # 品种代码，如 "rb2610.SHF"
+
+    def to_datetime(self, tz=None) -> datetime:
+        """Render the source bar label without rounding or changing timestamp."""
+        return timestamp_datetime(self.timestamp, symbol=self.symbol, tz=tz)
 
     def __str__(self):
         prefix = f"{self.symbol} " if self.symbol else ""

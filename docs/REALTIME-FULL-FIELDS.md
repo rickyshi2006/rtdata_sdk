@@ -64,6 +64,32 @@ UTC millisecond value always retains its original instant.
 
 ## Fields and compatibility
 
+### Timestamp display
+
+`quote.timestamp` (the `trade_time` alias) and `kline.timestamp` keep the
+received integer milliseconds. On UTC-normalized servers these represent UTC
+instants, regardless of market. Display conversion never adds an offset to the
+stored timestamp:
+
+```python
+quote.to_datetime()                 # aware datetime in the symbol's market zone
+quote.to_datetime("UTC")            # the same instant in UTC
+quote.to_datetime("Asia/Shanghai")  # the same instant in Beijing time
+kline.to_datetime()                 # same helper for historical bar labels
+```
+
+`tz` also accepts a `datetime.tzinfo`, for example `timezone.utc`. Omitting it
+selects Shanghai for A shares/domestic futures, Hong Kong for Hong Kong shares,
+New York (with DST) for US shares, the configured market zone for overseas
+futures, and UTC for supported crypto/FX codes (including `EUR.USD`). Unknown
+markets and a `Kline` without a symbol require an explicit timezone.
+On systems without an IANA timezone database, install `rtdata[market-time]`.
+
+The helper is display-only and cannot repair an old server's timezone-less
+wall-time timestamp. Deploy the server-side normalization first. Repeated
+trade timestamps can accompany order-book updates; display conversion does not
+substitute receive time or round historical bar labels.
+
 Extended quotes are read-only `Quote` instances. Available fields can be read
 as attributes or through the immutable `quote.fields` mapping. Export with
 `dict(quote.fields)`; legacy dataclass serialization is not a complete export.
