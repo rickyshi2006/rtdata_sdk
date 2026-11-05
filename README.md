@@ -1,4 +1,4 @@
-# rtdata SDK
+# rtdata 行情 SDK
 
 `rtdata` 提供实时行情订阅、历史 K 线和财务数据查询，支持 Python 3.9 及以上版本。
 
@@ -118,6 +118,9 @@ with rtdata.API(token=os.environ["RTDATA_TOKEN"]) as api:
 历史接口也可查询服务支持的期权等品种；市场权限、可用品种、周期与覆盖区间由服务决定。
 请使用 `api.symbols` 中的代码，不要自行拼接别名。
 
+交易所后缀、股票/指数/基金、期货/期权、外汇、加密货币的具体例子见
+[市场品种分类与代码实例](docs/MARKET-SYMBOLS.md)。
+
 财务接口：`get_finance()`、`get_finance_ttm()`、`get_finance_ratios()`、
 `get_finance_pit()`。普通报表与 PIT 的 `query_type` 默认均为 `4`（三表），
 `1/2/3` 分别选择利润表/资产负债表/现金流量表。A/HK/US 字段可能不同；PIT 当前
@@ -147,6 +150,7 @@ print(api.realtime_status)
 ## 文档导航
 
 - [完整使用手册与参数默认值](docs/SDK_USAGE.md)
+- [市场品种分类与代码实例](docs/MARKET-SYMBOLS.md)
 - [时间、夏令时与市场代码](docs/TIME-AND-MARKETS.md)
 - [实时全字段、盘口与兼容性](docs/REALTIME-FULL-FIELDS.md)
 - [Token 状态](docs/TOKEN_STATUS.md)

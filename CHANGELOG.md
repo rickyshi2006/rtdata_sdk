@@ -1,53 +1,37 @@
-# Changelog
+# 变更记录
 
-## Unreleased (main source)
+## 未发布（main 源码）
 
-- Add market-aware `Quote/Kline.to_datetime()` display without changing stored
-  timestamps; explicit IANA zones and tzinfo objects are also supported.
-- Align usage guides and examples with current defaults, market codes, nullable
-  full-field quotes, timezone handling and connection lifecycle.
-- Add offline documentation/example checks. Published release artifacts are unchanged.
+- 新增按市场显示的 `Quote/Kline.to_datetime()`，不修改保存的时间戳，
+  同时支持显式 IANA 时区和 tzinfo 对象。
+- 按当前默认参数、市场代码、全字段空值、时区和连接生命周期校准文档与示例。
+- 新增离线文档/示例检查；已发布安装包保持不变。
+- 仓库文档统一为简体中文，补充市场品种分类和具体代码实例。
 
-The entries below describe their historical releases, not current defaults.
+以下条目描述对应历史版本，不代表当前默认行为。
 
 ## 0.3.7 - 2026-11-04
 
-- Preserve requested subscriptions across reconnects and temporary symbol-map
-  gaps; restore pending symbols when the catalog becomes available.
-- Refresh incomplete catalogs without blocking quote reception.
-- Keep cancellation effective during disconnects and ignore stale subscription
-  acknowledgements. Serialize overlapping requests to avoid mismatched results.
-- Distinguish pending catalog entries from server-rejected subscriptions;
-  report send failures instead of silently dropping requests.
-- No changes to subscription arguments or quote formats are required.
+- 重连或品种映射暂时缺失时保留订阅意图，目录恢复后补订。
+- 非阻塞刷新不完整目录，不影响行情接收。
+- 断线期间取消订阅仍然有效，忽略过时的确认；串行处理重叠请求，避免确认错配。
+- 区分待映射品种与服务端拒绝，发送失败时明确报告，不静默丢弃请求。
+- 不要求修改现有订阅参数或行情格式。
 
 ## 0.3.6 - 2026-11-02
 
-- Improve connection negotiation resilience to network delay and retransmission.
-
-- Use provider-neutral names for internal extended-market schemas without
-  changing fields, schema identities or wire encoding.
-- Remove obsolete provider-specific constructor keywords and their compatibility
-  handler. Existing callers using these keywords must remove them; unsupported
-  keywords now raise TypeError. No replacement setting is needed.
-- Preserve automatic all-market negotiation, old-server fallback and explicit
-  protocol modes. Data routing remains a server responsibility.
-
-- Automatically negotiate V2 full fields for every market advertised at login,
-  including overseas futures and crypto, without provider-specific options.
-- Keep original five-category negotiation for older servers and re-evaluate
-  capabilities on reconnect. Preserve explicit protocol modes;
-  provider routing remains a server responsibility.
-- Enable history capability negotiation and prefer History V2 by default in both
-  public clients. Retain V1 fallback for older peers and explicit opt-out switches.
-- Include Zstandard in the standard installation; keep the `history-v2` extra
-  name compatible with existing installation scripts.
-- Wait for an already pending history capability exchange before selecting the
-  first V2-enabled query protocol, within the caller's existing timeout.
-- Shut down disconnected transports before reconnect callbacks and release the
-  transport before waiting for user callback threads during close.
-- Preserve optional negotiation timeout fallback and single-session semantics;
-  closing a local socket is not an acknowledgement of remote session release.
+- 提高连接协商对网络延迟和重传的容忍度。
+- 扩展市场结构采用不绑定数据源的名称，不改变字段、结构标识和传输编码。
+- 删除过时的数据源专用构造参数和兼容处理；旧调用需删除这些参数，无需替代选项。
+  不支持的参数抛出 `TypeError`。
+- 根据登录声明自动协商全部受支持市场的 V2 全字段，包含海外期货与加密货币。
+- 对旧服务端保持五类别协商，重连时重新评估能力；保留显式协议选择和旧端回退，
+  数据选路仍由服务端负责。
+- 两个公开入口默认声明并优先使用历史 V2，保留 V1 回退及显式关闭选项。
+- 标准安装包含 Zstandard，保留 `history-v2` 扩展依赖名以兼容旧安装命令。
+- 首次历史请求在既有超时预算内等待正在进行的能力协商，避免过早选择协议。
+- 重连回调前关闭已断开的传输；关闭连接时，先释放传输再等待用户回调线程。
+- 保留可选协商超时回退及单会话语义；本地套接字关闭不等于远端确认释放会话。
 
 ## 0.3.5 - 2026-10-12
 
@@ -98,10 +82,10 @@ The entries below describe their historical releases, not current defaults.
 
 ## 0.2.0 - 2026-07-20
 
-- Add additive `TOKEN_STATUS (0x42)` protocol support.
-- Add `TokenStatus`, `on_token_status`, `token_status`, and token expiry accessors.
-- Read gateway version and enabled protocol features from discovery responses.
-- Preserve compatibility with gateways that do not support token status events.
-- Prevent dead or superseded sockets from reporting a successful reconnect.
-- Stop automatic reconnect after an expired, disabled, or revoked token status.
-- Allow an explicit reconnect after the token is restored.
+- 新增 `TOKEN_STATUS (0x42)` 协议支持，不改变已有认证格式。
+- 新增 `TokenStatus`、`on_token_status`、`token_status` 和到期时间访问属性。
+- 从服务发现响应读取网关版本和已启用的协议能力。
+- 兼容不支持账号状态通知的网关。
+- 防止失效或已替换的套接字错误报告重连成功。
+- 收到过期、禁用或撤销状态后停止自动重连。
+- 账号恢复后允许显式重新连接。
