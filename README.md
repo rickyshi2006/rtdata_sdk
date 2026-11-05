@@ -4,24 +4,19 @@
 
 ## 版本与安装
 
-当前包版本为 **0.3.7**。本页及使用文档跟随仓库 **main 源码**；已发布安装包的
-能力以对应 tag 和 [发布说明](docs/RELEASE-NOTES.md) 为准。
-**`Quote/Kline.to_datetime()` 已进入 main，尚未包含在已发布的 v0.3.7 安装包中。**
-使用下列新示例前，请安装当前源码；本次文档更新不替换既有发布包。
+当前包版本为 **0.3.8**，包含 `Quote/Kline.to_datetime()`、中文文档和更新后的示例。
+旧 v0.3.7 没有该时间显示方法，使用新示例前请升级。
+功能以对应标签和 [发布说明](docs/RELEASE-NOTES.md) 为准。
 
-在源码仓库目录执行（包含 Windows 等环境所需的时区数据）：
+从 [GitHub Releases](https://github.com/rickyshi2006/rtdata_sdk/releases/tag/v0.3.8)
+下载 wheel，以随包 `SHA256SUMS` 校验后安装（包括 Windows 等环境所需的时区数据）：
 
 ```bash
-python -m pip install -e ".[market-time]"
+python -m pip install --upgrade "./rtdata-0.3.8-py3-none-any.whl[market-time]"
 python -c "import rtdata; print(rtdata.__version__, rtdata.__file__); print(hasattr(rtdata.Quote, 'to_datetime'))"
 ```
 
-正式使用可从 [GitHub Releases](https://github.com/rickyshi2006/rtdata_sdk/releases)
-下载 wheel，以随包 `SHA256SUMS` 校验后安装：
-
-```bash
-python -m pip install --upgrade ./rtdata-0.3.7-py3-none-any.whl
-```
+如需开发安装，在对应版本源码目录执行 `python -m pip install -e ".[market-time]"`。
 
 普通安装包含 Zstandard，历史 V2 默认协商并优先使用，不需要额外安装 `history-v2`。
 旧 extra 名仍兼容。更新安装后应重启 Python 进程；不要仅凭相同版本号推断源码能力。

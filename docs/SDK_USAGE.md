@@ -1,8 +1,7 @@
 # rtdata SDK 使用手册
 
-本文对应 main 源码，包版本号目前为 `0.3.7`。已发布 v0.3.7 不包含随后合入的
-`Quote/Kline.to_datetime()`；新示例须使用当前源码，安装见 [README](../README.md)。
-不把源码更新视为安装包已发布。Python 最低版本为 3.9。
+本文对应 `0.3.8`，已包含 `Quote/Kline.to_datetime()`；旧 v0.3.7 用户需先升级。
+安装见 [README](../README.md)。Python 最低版本为 3.9。
 
 ## 1. 连接入口与生命周期
 

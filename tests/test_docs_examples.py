@@ -37,6 +37,20 @@ def full_quote(code="BTCUSDT.BINANCE", source=7, null=True):
 
 
 class DocumentationTest(unittest.TestCase):
+    def test_release_documents_use_current_package_version(self):
+        version = rtdata.__version__
+        notes = (ROOT / "docs/RELEASE-NOTES.md").read_text(encoding="utf-8")
+        self.assertTrue(notes.startswith(f"## v{version}\n"))
+        changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+        self.assertIn(f"## {version} - ", changelog)
+        for path in DOCS:
+            if path.name.startswith("CHANGELOG"):
+                continue
+            for wheel_version in re.findall(r"rtdata-(\d+\.\d+\.\d+)-py3-none-any\.whl",
+                                            path.read_text(encoding="utf-8")):
+                with self.subTest(path=path.name):
+                    self.assertEqual(wheel_version, version)
+
     def test_documentation_prose_is_chinese(self):
         for path in DOCS:
             text = path.read_text(encoding="utf-8")
@@ -190,6 +204,13 @@ class ExamplesTest(unittest.TestCase):
             with self.assertRaisesRegex(SystemExit, "RTDATA_TOKEN"):
                 common.connection_options()
             api.assert_not_called()
+
+    def test_datetime_example_gate_accepts_release_and_rejects_old_api(self):
+        common = importlib.import_module("examples._common")
+        common.require_datetime()
+        with patch.object(rtdata, "Quote", object):
+            with self.assertRaisesRegex(SystemExit, "v0.3.8"):
+                common.require_datetime()
 
     def test_quote_formatter_handles_null_zero_and_all_market_schemas(self):
         common = importlib.import_module("examples._common")

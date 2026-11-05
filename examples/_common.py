@@ -19,8 +19,8 @@ def connection_options():
 def require_datetime():
     if not hasattr(rtdata.Quote, "to_datetime") or not hasattr(rtdata.Kline, "to_datetime"):
         raise SystemExit(
-            "This example needs current main source (to_datetime is not in the "
-            "published v0.3.7 wheel). See examples/README.md."
+            "本示例需要 rtdata v0.3.8 或更高版本的 to_datetime()；"
+            "安装方式见 examples/README.md。"
         )
 
 

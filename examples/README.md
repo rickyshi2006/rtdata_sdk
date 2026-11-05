@@ -1,14 +1,16 @@
 # 示例运行指南
 
-此目录跟随 main 源码。时间显示示例需要 `Quote/Kline.to_datetime()`，
-**已发布 v0.3.7 安装包尚无该方法**。请在源码目录安装：
+此目录对应 v0.3.8，时间显示示例需要该版本新增的 `Quote/Kline.to_datetime()`。
+请从相同版本的源码包取得示例，并安装下载的 wheel：
 
 ```bash
-python -m pip install -e ".[market-time]"
+python -m pip install --upgrade "./rtdata-0.3.8-py3-none-any.whl[market-time]"
 python -c "import rtdata; print(rtdata.__version__, rtdata.__file__); print(hasattr(rtdata.Quote, 'to_datetime'))"
 ```
 
 ## 配置与运行
+
+以下命令在源码包解压目录执行；开发时也可在该目录安装 `python -m pip install -e ".[market-time]"`。
 
 Linux/macOS：
 
