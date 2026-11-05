@@ -1,7 +1,7 @@
 # 时间与市场代码
 
-本文对应 main。`Quote/Kline.to_datetime()` 尚不在已发布 v0.3.7 包内；
-安装当前源码后使用，见 [README](../README.md)。
+`Quote/Kline.to_datetime()` 从 v0.3.8 起提供；旧版用户先升级，
+安装见 [README](../README.md)。
 
 ## 同时订阅 A 股和美股
 
@@ -98,10 +98,10 @@ end_now = datetime.now(timezone.utc)  # 精确的当前时刻；可作为 end �
 - 夏令时跳变时不存在或重复的无时区时间会报 `ValueError`，需使用明确 offset 的时间。
 - `get_kline_for_today()` 采用市场当前日期；国内期货夜盘的自然日不等于交易日标签。
 
-系统需提供 IANA 时区数据。Windows 或精简系统可在源码目录执行：
+系统需提供 IANA 时区数据。Windows 或精简系统可随下载的 wheel 安装：
 
 ```bash
-python -m pip install -e ".[market-time]"
+python -m pip install --upgrade "./rtdata-0.3.8-py3-none-any.whl[market-time]"
 ```
 
 时区依赖只提供转换数据，不能为旧版本增加 `to_datetime()` 方法。

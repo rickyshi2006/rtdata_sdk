@@ -1,7 +1,7 @@
 """History V2 能力协商、查询和自动回退状态示例。
 
 普通安装默认包含 History V2，无需额外协议开关。
-时间显示使用当前 main 的 to_datetime()，安装见 examples/README.md。
+时间显示使用 v0.3.8 新增的 to_datetime()，安装见 examples/README.md。
 """
 
 import rtdata

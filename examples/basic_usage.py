@@ -1,4 +1,4 @@
-"""最小订阅：环境变量 RTDATA_TOKEN，监听 60 秒；需要当前 main 源码。"""
+"""最小订阅：环境变量 RTDATA_TOKEN，监听 60 秒；需要 rtdata v0.3.8 或更高版本。"""
 
 import rtdata
 

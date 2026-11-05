@@ -2,23 +2,23 @@
 
 ## 源码与安装包分开核对
 
-- 当前包版本号为 `0.3.7`，发布产物以 GitHub Release/tag 为准。
-- main 可以包含尚未发布的功能。当前 `Quote/Kline.to_datetime()` 已进入 main，
-  **不在已发布 v0.3.7 wheel 中**。不能只检查版本号就声称安装包支持最新示例。
+- 当前包版本号为 `0.3.8`，发布产物以 GitHub Release/tag 为准。
+- 本版本包含 `Quote/Kline.to_datetime()`、中文文档和对应示例；旧 v0.3.7 用户需升级。
+- 后续 main 仍可能领先正式版本，交付必须匹配包版本、标签和示例。
 - 用户安装说明以 [README](README.md) 为入口，参数与行为以
   [使用手册](docs/SDK_USAGE.md) 为准，避免在交付文档复制另一套过期接口说明。
-- 本轮文档/示例校准不发布新包、不改版本、不替换原 Release 附件。
+- v0.3.8 使用新标签和新附件，不替换 v0.3.7 或更旧的 Release 产物。
 
 ## 安装与校验
 
 正式交付使用审核过的不可变 wheel/sdist 及 `SHA256SUMS`：
 
 ```bash
-python -m pip install --upgrade ./rtdata-0.3.7-py3-none-any.whl
+python -m pip install --upgrade "./rtdata-0.3.8-py3-none-any.whl[market-time]"
 python -c "import rtdata; print(rtdata.__version__, rtdata.__file__)"
 ```
 
-新源码功能验收在仓库目录安装，不要将其冒充旧 Release：
+如需源码开发，在对应版本仓库目录安装，不要将其冒充旧 Release：
 
 ```bash
 python -m pip install -e ".[market-time]"
@@ -50,7 +50,7 @@ python -c "import rtdata; print(rtdata.__version__, rtdata.__file__); print(hasa
 - 缓存默认 `~/.rtdata/history_utc_v1/`；查询更正数据时可关闭缓存。
 - 区分认证、发现、连接、查询拒绝、超时、断线和实时不可用异常。
 - 财务字段按市场处理；PIT 支持范围见使用手册。
-- 原安装包不支持的新方法必须在正式发布后再要求客户升级使用。
+- 使用 `to_datetime()` 的客户端应确认安装 v0.3.8 或更高版本。
 
 ## 发布流程
 
