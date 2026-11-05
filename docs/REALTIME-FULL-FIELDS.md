@@ -1,12 +1,10 @@
-# Realtime quote fields
+# 实时行情全字段说明
 
-This document follows main source. `Quote/Kline.to_datetime()` is not included
-in the published v0.3.7 wheel; see [installation](../README.md) and the
-[market time guide](TIME-AND-MARKETS.md). Runnable examples with cleanup and
-observation loops are indexed in [examples](../examples/README.md).
+本文对应 main 源码。`Quote/Kline.to_datetime()` 尚未包含在已发布的 v0.3.7 安装包中；
+安装方式见 [README](../README.md)，时间转换见 [时间说明](TIME-AND-MARKETS.md)。
+包含持续监听和连接关闭的完整程序见 [示例索引](../examples/README.md)。
 
-Both `API` and `RtdataClient` default to automatic V2 full-field negotiation.
-Existing connection and subscription calls need no additional argument.
+`API` 和 `RtdataClient` 默认自动协商 V2 全字段，原有连接和订阅调用无需增加参数。
 
 ```python
 import rtdata
@@ -19,34 +17,27 @@ def on_quote(quote):
     print(dict(quote.fields))
 
 api.subscribe(["600519.SH"])
-# Continue application work/waiting, then close the API in a finally block.
+# 继续等待或执行业务，退出时在 finally 中调用 api.close()。
 ```
 
-## Protocol selection
+## 协议选择
 
-- `auto` (default): request extended quotes and fall back to the compatible
-  quote format if negotiation is unavailable. Inspect `quote.wire_version`.
-- `legacy`: explicitly retain the compatible quote format and mutable `Quote`
-  construction. This remains an opt-out from automatic negotiation.
-- `required_v2`: reject fallback. `connect()` waits for negotiation, not the
-  first quote. `get_quote()` raises `RealtimeUnavailableError` if no current
-  extended quote exists; `wait_for_quote()` waits until its timeout.
+- `auto`（默认）：申请全字段；无法协商时回退兼容格式。实际格式查看 `quote.wire_version`。
+- `legacy`：显式使用旧兼容格式，保留旧版可修改的 `Quote`，不进行自动全字段协商。
+- `required_v2`：禁止回退。`connect()` 等待协议协商，但不等待首条行情；
+  当前没有可用全字段快照时，`get_quote()` 抛出 `RealtimeUnavailableError`，
+  `wait_for_quote()` 则等待至满足条件或超时。
 
-These options are accepted by both constructors. `subscribe()` is unchanged.
-`wait_for_quote()` does not subscribe implicitly. A successful subscription or
-negotiation does not mean a first quote has arrived.
+两个构造入口都支持这些选项，`subscribe()` 的调用方式不变。
+`wait_for_quote()` 不会自动订阅。协商成功或订阅确认均不表示首条行情已经到达。
 
-## Additional markets
+## 市场类别与盘口档数
 
-Since version 0.3.6, the SDK automatically includes every supported market
-advertised by the connected server, including `overseas_futures` (schema 4)
-and `crypto` (schema 5).
-No market-enable or provider-selection argument is needed. Server-side routing
-selects the data provider; client capability negotiation only selects the format.
-The additional schemas support up to ten book levels, signed 64-bit quantities
-and quantity precision fields. Actual available depth depends on the instrument.
+从 0.3.6 起，SDK 自动将服务端声明支持的市场纳入协商，包括海外期货和加密货币。
+不需要启用市场的额外参数，也不需要选择后端数据源；客户端能力协商只决定传输格式。
+具体市场分类与证券代码见 [市场品种与代码实例](MARKET-SYMBOLS.md)。
 
-| Public category | Schema | Defined book levels per side |
+| 公开类别 | 字段结构编号 | 每侧定义的盘口档数 |
 | --- | ---: | ---: |
 | `cn_equity`, `hk_equity`, `us_equity` | 1 | 5 |
 | `futures` | 2 | 5 |
@@ -54,95 +45,92 @@ and quantity precision fields. Actual available depth depends on the instrument.
 | `overseas_futures` | 4 | 10 |
 | `crypto` | 5 | 10 |
 
-These are schema capacities, not guaranteed available depth. US equities still
-use the five-level public schema even if more levels are available elsewhere.
-Null positions must not be removed and shifted to a different level.
+上表表示字段结构（schema）的容量，不保证每个品种都提供足够档位。
+美股当前仍使用五档公开结构，即使其他接口提供更多档也不代表 SDK 此结构包含十档。
+海外期货和加密货币结构支持最多十档、64 位有符号数量及数量精度字段。
+不要删除空档后把后面的档位前移，否则会改变档位含义。
 
-The successful login response may advertise supported market IDs and frame
-limits. These are re-evaluated on every connection. Without this metadata, the
-SDK sends the original five-category offer understood by older strict parsers;
-servers without V2 support retain six-field fallback. Existing category field
-definitions and schema identities are unchanged. Since version 0.3.6, obsolete
-provider-specific constructor keywords are no longer accepted. Remove them
-from existing calls; no replacement argument is needed. Unsupported constructor
-keywords raise `TypeError`. Explicit `realtime_protocol` modes remain supported.
+登录成功响应可以声明支持的市场和帧大小，SDK 在每次连接时重新评估。
+旧服务端不提供这些信息时，SDK 使用兼容旧解析器的五类别能力声明；
+完全不支持 V2 的服务端仍可使用六字段兼容格式。既有类别的字段定义和结构标识不变。
+从 0.3.6 起，已移除过时的数据源专用构造参数；调用方应删除这些参数，不需要替代参数。
+不支持的关键字会抛出 `TypeError`，显式 `realtime_protocol` 选项仍有效。
 
-`raw_bits` is a JSON string mapping source field-group numbers to hex-encoded
-protobuf bytes. It preserves unnamed source fields without inventing names or
-units. Missing named fields remain `None`; this includes fields unavailable
-on a particular market. Book quantities preserve source integers; consult
-`book_volume_precision` before displaying fractional units. The raw field is
-bounded at 512 KiB, and the extended row at a negotiated maximum of 1 MiB;
-oversized rows are rejected, not silently truncated.
+### 原始字段与数量精度
 
-Historical naive times for `.SGX`, `.HKFE`, `.OSE`, `.BMD`, `.CME`, `.CBOT`,
-`.CBOE`, `.NYMEX` and `.COMEX` use their market timezone, including DST.
-Confirmed crypto suffixes, `.CFBM` and `.FX` use UTC. An aware datetime or
-UTC millisecond value always retains its original instant.
+`raw_bits` 是 JSON 字符串，将原始字段组编号映射到十六进制编码的 protobuf 字节，
+用于保留尚未命名的原始字段，不擅自发明字段名称或单位。
+命名字段缺失时仍为 `None`，包括某市场不提供的字段。
 
-## Fields and compatibility
+盘口数量保留原始整数；显示小数单位前应核对 `book_volume_precision`。
+成交量精度可查看 `volume_precision`；并非所有 schema 都提供精度字段，
+没有精度信息时不能按别的市场单位强行缩放。
+`raw_bits` 最大 512 KiB，扩展行受协商上限约束，最大 1 MiB；
+超限数据会被拒绝，不会静默截断。
 
-### Timestamp display
+## 字段读取与兼容性
 
-`quote.timestamp` (the `trade_time` alias) and `kline.timestamp` keep the
-received integer milliseconds. On UTC-normalized servers these represent UTC
-instants, regardless of market. Display conversion never adds an offset to the
-stored timestamp:
+V2 行情是只读 `Quote` 实例。可通过属性或只读映射 `quote.fields` 读取，
+用 `dict(quote.fields)` 导出完整字段，旧 dataclass 序列化不等同于全字段导出。
+
+- NULL 保留为 `None`，真实零仍为零。结构之外的字段不在 `fields` 中。
+  以该映射或 `available_fields` 判断支持情况；继承自旧 Quote 的兼容属性可能仍有默认值。
+- 浮点数保留双精度，整数保持 Python 整数；负数、NaN 和无穷值不会替换为零。
+- 常用别名保持不变：`bid=bid_price1`、`ask=ask_price1`、
+  `timestamp=trade_time`、`prev_close=pre_close`、`turnover=amount`。
+- `bid_prices/bid_volumes/ask_prices/ask_volumes` 返回独立列表，保留空值位置；
+  可用档数随市场和实际数据而变化。
+- `wire_version/schema_id/schema_version/source_id/source_epoch/sequence`
+  描述格式和快照代次、序列等信息，不应当作行情一定活跃的保证。
+- 兼容属性 `source_table` 返回公开市场类别：
+  `cn_equity/hk_equity/futures/us_equity/fx/overseas_futures/crypto`，不是后端源名称。
+
+需要修改行情的业务应保存自己的副本。格式化空值时必须显式判断，不能把缺失当成零：
 
 ```python
-quote.to_datetime()                 # aware datetime in the symbol's market zone
-quote.to_datetime("UTC")            # the same instant in UTC
-quote.to_datetime("Asia/Shanghai")  # the same instant in Beijing time
-kline.to_datetime()                 # same helper for historical bar labels
+last = "N/A" if quote.last is None else f"{quote.last:.6f}"
+bid1 = quote.bid_prices[0] if quote.bid_prices else None
+open_interest = quote.fields.get("open_interest")
+exported = dict(quote.fields)
 ```
 
-`tz` also accepts a `datetime.tzinfo`, for example `timezone.utc`. Omitting it
-selects Shanghai for A shares/domestic futures, Hong Kong for Hong Kong shares,
-New York (with DST) for US shares, the configured market zone for overseas
-futures, and UTC for supported crypto/FX codes (including `EUR.USD`). Unknown
-markets and a `Kline` without a symbol require an explicit timezone.
-On systems without an IANA timezone database, install `rtdata[market-time]`.
+## 时间戳与市场时间显示
 
-The helper is display-only and cannot repair an old server's timezone-less
-wall-time timestamp. Deploy the server-side normalization first. Repeated
-trade timestamps can accompany order-book updates; display conversion does not
-substitute receive time or round historical bar labels.
+`quote.timestamp`（`trade_time` 的别名）及 `kline.timestamp` 保留收到的整数毫秒。
+采用 UTC 规范的服务端发送真实 UTC 时刻，不因市场不同而改变 epoch 定义。
+显示转换不会修改保存的时间戳：
 
-Extended quotes are read-only `Quote` instances. Available fields can be read
-as attributes or through the immutable `quote.fields` mapping. Export with
-`dict(quote.fields)`; legacy dataclass serialization is not a complete export.
+```python
+quote.to_datetime()                 # 证券市场当地时间，带时区
+quote.to_datetime("UTC")            # 同一时刻的 UTC 显示
+quote.to_datetime("Asia/Shanghai")  # 同一时刻的北京时间显示
+kline.to_datetime()                 # 历史 K 线时间标签采用同一方法
+```
 
-- NULL values are `None`; real zero stays zero. Fields outside the schema are
-  absent from `fields`. Use this mapping or `available_fields` to check support:
-  inherited compatibility attributes can retain defaults even when not supplied.
-- Floating-point values keep double precision; integer values remain Python
-  integers. Negative values, NaN and infinity are not replaced with zero.
-- Existing aliases remain: `bid=bid_price1`, `ask=ask_price1`,
-  `timestamp=trade_time`, `prev_close=pre_close`, `turnover=amount`.
-- `trade_time` preserves the received integer timestamp; historical input
-  timezone conversion does not apply to it.
-- `bid_prices`, `bid_volumes`, `ask_prices`, `ask_volumes` return independent
-  lists with missing-value positions preserved. Available depth varies by market.
-- `wire_version`, `schema_id`, `schema_version`, `source_id`, `source_epoch`
-  and `sequence` describe quote format and freshness.
-- The compatibility attribute `source_table` contains a public category:
-  `cn_equity`, `hk_equity`, `futures`, `us_equity`, `fx`, `overseas_futures` or `crypto`.
+`tz` 还可接受 `datetime.tzinfo`，例如 `timezone.utc`。
+省略时，A 股/国内期货用上海时区，港股用香港时区，美股用纽约时区并处理夏令时；
+海外期货采用对应市场时区，已识别的外汇和加密货币代码（含 `EUR.USD`）用 UTC。
+无法识别的市场、没有 symbol 的自建 `Kline` 应显式提供时区。
+时区识别不验证品种是否存在；以 [品种目录](MARKET-SYMBOLS.md) 为准。
+系统没有 IANA 时区数据时可安装 `rtdata[market-time]`。
 
-Code that modifies a quote must keep its own copy. Code that exports quotes
-should use `dict(quote.fields)` to include all available fields.
+该方法只改变显示，不能修复旧服务端把无时区墙钟值错误编码为 epoch 的情况；
+服务端必须先提供规范时间。盘口变化时成交时间可能重复，不要替换成本地接收时间，
+也不要把历史 K 线标签重新取整或移动到开盘时刻。
 
-## Status and lifecycle
+历史无时区输入按市场解释：`.SGX/.HKFE/.OSE/.BMD/.CME/.CBOT/.CBOE/.NYMEX/.COMEX`
+使用对应时区及夏令时；已确认的加密货币后缀、`.CFBM/.FX` 使用 UTC。
+带时区的时间或 UTC 毫秒保持原真实时刻。历史输入转换不再次应用到收到的实时时间戳。
 
-`realtime_status.tables` is keyed by the public categories above. Each status
-provides `ready`, `reason` and `epoch`; negotiated support does not imply every
-category is ready. Use `on_realtime_status` for changes. Do not block inside
-callbacks or call synchronous query/wait methods from receive callbacks.
+## 状态与生命周期
 
-Disconnects, authentication failures and close clear cached quotes. Category
-state changes invalidate affected quotes. A quote retained by application code
-is a past immutable snapshot, not a live readiness indicator.
+`realtime_status.tables` 以公开类别为键，状态包含 `ready/reason/epoch`；
+完成协议协商不等于每个类别都已就绪。可通过 `on_realtime_status` 观察变化。
+回调应快速返回，不要在接收线程回调中调用同步查询或等待接口。
 
-Quotes use latest-value-per-symbol semantics, not a lossless event stream.
-Slow callbacks may skip superseded quotes. `realtime_statistics` reports
-rejected rows, cached wire bytes and tracked symbols. Callback queues and the
-quote cache are bounded; their wire-byte limits are not total Python memory limits.
+断线、认证失败和关闭会清理行情缓存，类别状态变化会使相应快照失效。
+业务代码保存的快照是历史状态，不代表当前连接或市场仍然可用。
+
+行情按每个品种的最新值分发，不是无损逐笔事件流。回调过慢时可能跳过已被更新的快照。
+`realtime_statistics` 提供拒绝行数、缓存传输字节数和跟踪品种数；
+回调队列及缓存有界，但传输字节限制不等于整个 Python 进程的内存限制。

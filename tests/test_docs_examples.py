@@ -16,6 +16,7 @@ import rtdata
 from rtdata._history_segment_cache import HistorySegmentCache
 from rtdata._realtime_protocol import Snapshot
 from rtdata._realtime_schema import SCHEMAS, SOURCES
+from rtdata._history_time import market_zone
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -36,6 +37,72 @@ def full_quote(code="BTCUSDT.BINANCE", source=7, null=True):
 
 
 class DocumentationTest(unittest.TestCase):
+    def test_documentation_prose_is_chinese(self):
+        for path in DOCS:
+            text = path.read_text(encoding="utf-8")
+            prose = re.sub(r"```.*?```", "", text, flags=re.S)
+            prose = re.sub(r"`[^`]+`", "", prose)
+            prose = re.sub(r"\[([^]]+)\]\([^)]+\)", r"\1", prose)
+            for paragraph in re.split(r"\n\s*\n", prose):
+                if len(re.findall(r"\b[A-Za-z]{2,}\b", paragraph)) >= 5:
+                    with self.subTest(path=path.name, paragraph=paragraph[:80]):
+                        self.assertRegex(paragraph, r"[\u4e00-\u9fff]")
+            for heading in re.findall(r"^#+ (.+)$", prose, re.M):
+                if re.fullmatch(r"v?\d+\.\d+\.\d+(?: - \d{4}-\d{2}-\d{2})?", heading):
+                    continue
+                with self.subTest(path=path.name, heading=heading):
+                    self.assertRegex(heading, r"[\u4e00-\u9fff]")
+
+    def test_market_guide_examples_match_timezone_rules(self):
+        text = (ROOT / "docs/MARKET-SYMBOLS.md").read_text(encoding="utf-8")
+        cases = {
+            "Asia/Shanghai": ["601919.SH", "000001.SZ", "rb2701.SHF", "au2612.SHF",
+                              "i2701.DCE", "MA701.CZC", "IF2612.CFE", "sc2612.INE",
+                              "si2701.GFE", "y2605-P-9700.DCE", "fu2609C4800.SHF"],
+            "Asia/Hong_Kong": ["00700.HK", "HSImain.HKFE", "A50main.HKFE"],
+            "America/New_York": ["AAPL", "BRK.B", "CLmain.NYMEX", "GCmain.COMEX"],
+            "America/Chicago": ["ZCmain.CBOT", "ES2612.CME", "VXmain.CBOE"],
+            "Asia/Singapore": ["CNmain.SGX", "FEFmain.SGX"],
+            "Asia/Tokyo": ["JNImain.OSE"],
+            "Asia/Kuala_Lumpur": ["FCPOmain.BMD"],
+            "UTC": ["EUR.USD", "USD.JPY", "XAUUSD.FX", "USDindex.FX",
+                    "BTCUSDT.BINANCE", "BTCUSDT.OKX", "BTCUSD.COINBASE", "BRTI.CFBM"],
+        }
+        for zone, codes in cases.items():
+            for code in codes:
+                with self.subTest(code=code):
+                    self.assertIn(f"`{code}`", text)
+                    self.assertEqual(market_zone(code).key, zone)
+
+    def test_market_guide_lists_exchange_suffixes(self):
+        text = (ROOT / "docs/MARKET-SYMBOLS.md").read_text(encoding="utf-8")
+        for suffix in ("SHF", "DCE", "CZC", "CFE", "INE", "GFE", "NYMEX", "COMEX",
+                       "CBOT", "CME", "CBOE", "HKFE", "SGX", "OSE", "BMD",
+                       "BITFLYER", "BITFINEX", "BITSTAMP", "BTCTURK", "GEMINI", "HUOBI",
+                       "KUCOIN", "LBANK", "OKX", "BINANCE", "BINANCEUS", "HASHKEY",
+                       "COINBASE", "BITGO", "CRYPTO", "CFBM"):
+            self.assertIn(f"| `.{suffix}` |", text)
+
+    def test_market_catalog_snippet_reads_only_directory(self):
+        text = (ROOT / "docs/MARKET-SYMBOLS.md").read_text(encoding="utf-8")
+        snippets = re.findall(r"```python\n(.*?)\n```", text, re.S)
+        self.assertEqual(len(snippets), 1)
+        api = create_autospec(rtdata.API, instance=True)
+        api.__enter__.return_value = api
+        api.symbols = {1: "601919.SH", 2: "BTCUSDT.BINANCE", 3: "CNmain.SGX"}
+        with patch.dict(os.environ, {"RTDATA_TOKEN": "catalog-only"}), \
+                patch.object(rtdata, "API", return_value=api), \
+                patch("socket.socket") as socket, contextlib.redirect_stdout(io.StringIO()):
+            namespace = {}
+            exec(compile(snippets[0], "MARKET-SYMBOLS.md", "exec"), namespace)
+        self.assertEqual(namespace["present"], ["601919.SH", "BTCUSDT.BINANCE", "CNmain.SGX"])
+        self.assertEqual(namespace["missing"], ["AAPL", "EUR.USD", "BTCUSDT.OKX"])
+        self.assertLessEqual(len(namespace["sample"]), 20)
+        api.subscribe.assert_not_called()
+        api.get_kline.assert_not_called()
+        api.__exit__.assert_called_once()
+        socket.assert_not_called()
+
     def test_constructor_tables_match_signatures(self):
         text = (ROOT / "docs/SDK_USAGE.md").read_text(encoding="utf-8")
         api_section = text.split("### API 构造参数\n", 1)[1].split("### RtdataClient", 1)[0]

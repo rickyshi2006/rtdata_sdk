@@ -1,84 +1,87 @@
-# Development and release process
+# 开发与发布流程
 
-## Local-first integration
+## 本地优先集成
 
-Review and test the development branch, merge into the original checkout's
-LOCAL `main`, validate there, then synchronize that exact main to GitHub.
-Do not merge remotely first, force-push, or bypass repository protection.
-Back up and preserve unrelated uncommitted work and linked worktrees before
-integration. Source synchronization does not publish a package or authorize
-deployment; release tags and immutable artifacts are a separate step.
+先审查和测试开发分支，再在原始仓库的**本地 main** 合并并验证，最后将完全相同的
+main 同步到 GitHub。禁止远程先合并、强推或绕过仓库保护。
+集成前备份并保留无关的未提交改动和关联工作树。同步源码不等于发布安装包，
+也不授权部署；版本标签和不可变发布产物需要单独处理。
 
-## Branching and CI
+## 分支与持续集成
 
-- `main` must remain releasable.
-- Use short-lived `feature/*` and `fix/*` branches.
-- Protect `main` and require `.github/workflows/ci.yml`.
-- CI runs unit and compatibility tests across supported Python versions and
-  verifies wheel installation.
+- `main` 必须保持可发布。
+- 使用短期 `feature/*`、`fix/*` 分支。
+- 应保护 main，并将 `.github/workflows/ci.yml` 设为必需检查。
+- 持续集成（CI）覆盖支持的 Python 版本、单元/兼容测试及 wheel 安装验证。
 
-## Versioning
+## 版本管理
 
-The package version has one source:
+包版本只在下列文件定义：
 
 ```text
 rtdata/_version.py
 ```
 
-`pyproject.toml` reads this value dynamically. Release tags use `vX.Y.Z`; the
-release workflow rejects tags that do not match the package version.
+`pyproject.toml` 动态读取该值。发布标签使用 `vX.Y.Z`；
+标签与包版本不匹配时，发布流程必须拒绝。
 
-## Protocol compatibility
+## 协议兼容性
 
-The SDK must:
+SDK 必须：
 
-- ignore unknown additive message types;
-- tolerate unknown JSON fields;
-- work when an old gateway does not send `TOKEN_STATUS`;
-- treat malformed optional control notifications as non-fatal;
-- preserve existing `AUTH_RESPONSE` behavior.
+- 忽略未知的新增消息类型；
+- 容忍未知 JSON 字段；
+- 兼容不发送 `TOKEN_STATUS` 的旧网关；
+- 将可选控制通知的格式错误视为非致命问题；
+- 保持现有 `AUTH_RESPONSE` 行为。
 
-Client-facing compatibility and quote behavior are documented in
-`docs/REALTIME-FULL-FIELDS.md` and `docs/SDK_USAGE.md`.
+客户端兼容性和行情行为见 `docs/REALTIME-FULL-FIELDS.md`、`docs/SDK_USAGE.md`。
 
-## Documentation and examples
+## 文档与示例
 
-When changing a public argument, default, model or behavior, update its usage
-guide and runnable example in the same branch. Keep `README.md` as the entry
-point, `docs/SDK_USAGE.md` as the parameter reference, and `examples/README.md`
-as the runnable index. Explain source-only features separately from released
-artifacts; move Unreleased entries to release notes only during an approved release.
+**仓库文档正文、标题及示例中的解释性注释统一使用简体中文。**
+代码标识符、协议字段、证券代码、命令、路径、标准名称及原始日志/错误信息保留原文，
+不得为了翻译而修改接口或协议值。文件名保持稳定，避免破坏既有链接。
 
-Run `python -m unittest discover -s tests -v` with `.[market-time]` installed.
-The offline documentation checks verify constructor defaults, local links,
-Python snippets, safe example imports, mocked example flows, nullable display
-and multi-market timestamps. They do not use real credentials or remote services.
-Do not use live examples as CI tests.
+公开参数、默认值、数据模型或行为变化时，同一开发分支必须更新使用文档和可运行示例。
+`README.md` 是入口，`docs/SDK_USAGE.md` 是参数参考，`examples/README.md` 是示例索引，
+`docs/MARKET-SYMBOLS.md` 是市场分类与代码参考。新增市场例子应有代码/目录依据；
+不能把时区规则支持、目录存在和实时可用性混为一谈。
 
-## Release
+源码新增但尚未发布的能力须与正式安装包明确区分。
+只有获批发布时，才将“未发布”条目写入对应版本发布说明。
 
-1. Update `_version.py` from a development version to the final version.
-2. Update `CHANGELOG.md`.
-3. Merge after CI passes.
-4. Create the matching `vX.Y.Z` tag.
-5. The release workflow rebuilds and tests wheel/sdist in clean environments,
-   generates checksums, and publishes immutable GitHub Release artifacts.
+安装 `.[market-time]` 后执行：
 
-Normally, published package files are immutable and fixes use a new patch version.
-An explicitly approved same-version consolidation must first archive the old
-artifacts outside this public repository, validate local main, regenerate all
-checksums, and verify the downloaded replacement. Document force-reinstallation
-for clients already using that version; do not silently change an installation.
+```bash
+python -m unittest discover -s tests -v
+```
 
-## Public content
+离线检查覆盖参数默认值、相对链接、代码块编译、导入安全、模拟示例流程、空值显示、
+多市场时间、市场文档及中文正文。测试不使用真实凭据或远端服务。
+不要把联网示例直接当作 CI 测试。
 
-Keep this repository and release notes focused on client APIs and usage.
-Do not publish service implementation details, storage technology, internal
-resource names, deployment topology, machine identifiers or operational reports.
-Keep internal account-policy implementation and rollout records out of release
-notes and public change summaries. Retain them in the private integration workspace.
-Use market categories and synthetic endpoints in examples and tests. Keep
-protocol numeric identifiers stable when changing client-facing labels.
-Use provider-neutral module, constant and test names as well. Constructors
-accept only explicit supported parameters, not hidden provider-selection
-keywords. Schema naming changes must preserve field order, types and wire hashes.
+## 发布
+
+1. 将 `_version.py` 从开发版本调整为正式版本。
+2. 更新 `CHANGELOG.md` 和对应发布说明。
+3. CI 通过后，按本地优先流程合并并同步。
+4. 创建与包版本一致的 `vX.Y.Z` 标签。
+5. 发布流程在干净环境重新构建并测试 wheel/源码包，生成校验清单，
+   发布不可变的 GitHub Release 产物。
+
+正常情况下，已发布文件不可变，修复使用新的补丁版本。
+明确获批的同版本整合，必须先把旧产物归档在本公开仓库之外，再验证本地 main、
+重新生成全部校验值并验证下载后的替换文件。
+须说明已安装同版本用户如何强制重装，不得静默改变其安装。
+
+## 公开内容边界
+
+仓库和发布说明面向客户端 API 与用法，不公开服务实现、存储技术、内部资源名、
+部署拓扑、机器标识或运维报告。内部账号策略实现和上线记录留在私有集成工作区，
+不写入发布说明和公开变更摘要。
+
+示例和测试使用市场类别及虚构端点。调整客户端名称时保持协议数字标识不变；
+模块、常量、测试命名也不绑定具体数据源。
+构造函数只接受明确支持的参数，不增加隐藏数据源选择关键字。
+字段结构改名时必须保持字段顺序、类型和传输哈希不变。

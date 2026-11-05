@@ -1,4 +1,4 @@
-"""Small helpers for examples; no connection or credentials are read on import."""
+"""示例共用辅助函数；导入时不建立连接，也不读取凭据。"""
 
 import os
 import time

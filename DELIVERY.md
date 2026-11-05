@@ -34,6 +34,7 @@ python -c "import rtdata; print(rtdata.__version__, rtdata.__file__); print(hasa
 2. 与该包对应 tag 的文档和示例，不能混用更新 main 的示例。
 3. 服务发现地址；token 通过独立渠道交付，不写入仓库、示例或共享日志。
 4. [示例索引](examples/README.md)、[时间说明](docs/TIME-AND-MARKETS.md)、
+   [市场品种与代码](docs/MARKET-SYMBOLS.md)、
    [实时字段](docs/REALTIME-FULL-FIELDS.md) 和 [Token 状态](docs/TOKEN_STATUS.md)。
 
 源码包通过 `MANIFEST.in` 包含文档、示例和离线测试；wheel 是 SDK 安装产物，

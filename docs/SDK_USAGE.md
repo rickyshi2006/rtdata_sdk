@@ -85,6 +85,7 @@ api.subscribe(["601919.SH", "AAPL", "EUR.USD", "BTCUSDT.BINANCE"])
 `subscribe` 发出请求不等于服务端确认，更不等于已收到行情。
 `api.symbols` 返回 `{id: code}`；以该目录中的代码为准，不应使用 `EURUSD`、`BTC/USDT`
 等自行构造的别名。参见 [代码及市场时区](TIME-AND-MARKETS.md)。
+市场分类、交易所后缀及更完整的代码实例见 [市场品种与代码](MARKET-SYMBOLS.md)。
 
 默认 `auto` 自动协商所有服务端声明支持的市场，支持 V2 时读取全字段；旧端可以回退。
 `legacy` 显式选择兼容六字段；`required_v2` 不接受回退，连接时等待协议协商。

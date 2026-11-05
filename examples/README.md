@@ -32,6 +32,7 @@ python examples/subscribe_realtime.py
 `_common.py` 仅供示例共享配置、格式化和等待函数，不是 SDK 的公开接口。
 
 按需要修改示例顶部的 `SYMBOLS`、查询区间和观察时长，不把真实 token 写入文件。
+选择代码时可参考 [市场品种分类与代码实例](../docs/MARKET-SYMBOLS.md)。
 期货合约可能到期、不同服务目录不同，先确认 `api.symbols`。休市无推送或初始化快照
 并不代表连接失败；协议 ready 也不保证每个品种都有活跃行情。
 
