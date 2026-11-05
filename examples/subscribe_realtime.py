@@ -9,7 +9,6 @@
 """
 import time
 import logging
-from datetime import datetime, timezone
 import rtdata
 from rtdata import Quote
 
@@ -27,9 +26,9 @@ api = rtdata.API(token="your_token", api_url="https://api.vrrv.ccwu.cc")
 
 @api.on_quote
 def on_quote(q: Quote):
-    dt = datetime.fromtimestamp(q.timestamp / 1000, tz=timezone.utc)
+    dt = q.to_datetime()  # Market-local display; timestamp remains UTC milliseconds.
     ts = dt.strftime("%H:%M:%S.%f")[:-3]
-    print(f"  [{ts}] {q.symbol:<12s}  "
+    print(f"  [{ts} {dt:%z}] {q.symbol:<12s}  "
           f"last={q.last:.3f}  bid={q.bid:.3f}  "
           f"ask={q.ask:.3f}  vol={q.volume}")
 
