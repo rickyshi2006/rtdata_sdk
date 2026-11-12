@@ -22,6 +22,11 @@ python -c "import rtdata; print(rtdata.__version__, rtdata.__file__); print(hasa
 普通安装包含 Zstandard，历史 V2 默认协商并优先使用，不需要额外安装 `history-v2`。
 旧 extra 名仍兼容。更新安装后应重启 Python 进程；不要仅凭相同版本号推断源码能力。
 
+## 领取测试 token
+
+访问 [测试 token 领取页面](https://rtdata.vrrv.ccwu.cc/) 领取测试 token，
+领取后将其设置为环境变量 `RTDATA_TOKEN`，即可运行下方示例。
+
 ## 快速开始：同时订阅多个市场
 
 设置环境变量 `RTDATA_TOKEN` 为你的 token，不要把 token 提交到源码仓库。
