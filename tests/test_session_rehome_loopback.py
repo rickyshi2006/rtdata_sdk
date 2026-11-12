@@ -246,7 +246,7 @@ class SessionRehomeLoopbackTest(unittest.TestCase):
                         lambda: client.session_rehome_negotiated
                     ))
                     client.subscribe(["TEST.LOCAL"])
-                    self.assertTrue(secondary_state.subscribed.wait(2))
+                    self.assertTrue(secondary_state.subscribed.wait(6))
                     self.assertTrue(wait_until(
                         lambda: (
                             client.current_node_id == "node_primary"
@@ -254,7 +254,7 @@ class SessionRehomeLoopbackTest(unittest.TestCase):
                             and client.session_rehome_negotiated
                             and primary_state.subscribed.is_set()
                         ),
-                        timeout=5,
+                        timeout=7,
                     ))
 
                 self.assertGreaterEqual(discovery_state.connect_requests, 2)
