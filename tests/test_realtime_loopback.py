@@ -112,6 +112,35 @@ class Peer:
 
 
 class RealtimeLoopbackTest(unittest.TestCase):
+    def test_subscribe_during_ack_wait_is_sent_only_after_commit(self):
+        def scenario(peer):
+            sock = peer.accept()
+            _, _, payload = peer.until(sock, cap.OFFER)
+            offer = cap.Capability.decode(payload)
+            time.sleep(.1)
+            ack = cap.intersection(cap.supported(cap.Role.CLOUD), offer)
+            sock.sendall(proto.build_message(cap.ACK, 0, ack.encode()))
+            while True:
+                kind, _, _ = read_frame(sock)
+                assert kind != proto.MsgType.SUBSCRIBE_REQUEST, 'subscription overtook COMMIT'
+                if kind == cap.COMMIT:
+                    break
+            peer.status(sock, ack.nonce)
+            peer.subscribe(sock)
+            sock.sendall(proto.build_message(cap.SNAPSHOT, 1, wire.encode(fixture())))
+            peer.stop.wait(5)
+
+        peer, client = self.make(scenario, async_callbacks=False)
+        received = []
+        client.on_quote(received.append)
+        client.connect(2)
+        before = time.monotonic()
+        client.subscribe([fixture().fields['code']])
+        self.assertLess(time.monotonic() - before, .1)
+        self.assertEqual(client.wait_for_quote(fixture().fields['code'], 2).wire_version, 2)
+        self.assertEqual([q.wire_version for q in received], [2])
+        self.assertEqual(peer.errors, [])
+
     def test_delayed_ack_keeps_default_and_required_clients_negotiated(self):
         def scenario(peer):
             sock = peer.accept()
@@ -269,7 +298,7 @@ class RealtimeLoopbackTest(unittest.TestCase):
         peer, client = self.make(scenario, async_callbacks=False)
         client.connect(2)
         client.subscribe([fixture().fields['code']])
-        self.assertEqual(client.wait_for_quote(fixture().fields['code'], 2).wire_version, 1)
+        self.assertEqual(client.wait_for_quote(fixture().fields['code'], 6).wire_version, 1)
         with self.assertRaisesRegex(RealtimeUnavailableError, 'ack_timeout'):
             client.wait_for_realtime()
         self.assertEqual(peer.errors, [])

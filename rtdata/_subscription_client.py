@@ -17,6 +17,7 @@ class SubscriptionClientMixin:
         self._subscription_ids = {}
         self._subscribe_queue = set()
         self._subscribe_inflight = None
+        self._subscription_protocol_ready = True
         self._subscribed_codes = []
         self._last_subscribe_warning = None
         self._last_subscribe_requested = []
@@ -58,6 +59,7 @@ class SubscriptionClientMixin:
             self._authenticated = False
             self._subscription_ids.clear()
             self._subscribe_inflight = None
+            self._subscription_protocol_ready = True
             self._subscribe_queue = set(self._desired_subscriptions)
             self._last_subscribe_rejected = []
             self._subscribed_codes = []
@@ -67,7 +69,8 @@ class SubscriptionClientMixin:
 
     def _flush_subscriptions_locked(self):
         connection = self._conn
-        if not self._authenticated or connection is None or self._subscribe_inflight:
+        if (not self._authenticated or connection is None or self._subscribe_inflight
+                or not self._subscription_protocol_ready or not self._subscribe_queue):
             return
         requested = {}
         with self._symbol_map._lock:

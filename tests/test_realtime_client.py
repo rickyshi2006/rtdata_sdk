@@ -238,6 +238,63 @@ class RealtimeClientTest(unittest.TestCase):
         with self.assertRaises(RealtimeUnavailableError):
             client.wait_for_quote(fixture().fields['code'], .01)
 
+    def test_required_cold_status_is_not_an_error_but_live_loss_is(self):
+        client = self.client('required_v2')
+        errors, statuses = [], []
+        client.on_error(errors.append)
+        client.on_realtime_status(statuses.append)
+        nonce = self.negotiate(client)
+        self.status(client, nonce, ready=False)
+        self.assertEqual(errors, [])
+        self.assertFalse(statuses[-1].tables['cn_equity'].ready)
+        code = fixture().fields['code']
+        client.subscribe([code])
+        self.status(client, nonce, revision=2)
+        self.quote(client, fixture())
+        self.status(client, nonce, revision=3, ready=False)
+        self.assertEqual(len(errors), 1)
+        self.assertIn('cn_equity:suspended', str(errors[-1]))
+        self.assertNotIn('hk_equity', str(errors[-1]))
+        self.status(client, nonce, revision=4, ready=False)
+        self.assertEqual(len(errors), 1)
+        with self.assertRaises(RealtimeUnavailableError):
+            client.wait_for_quote(code, .01)
+        self.status(client, nonce, revision=5, epoch=92)
+        self.quote(client, fixture(epoch=92))
+        self.status(client, nonce, revision=6, ready=False)
+        self.assertEqual(len(errors), 2)
+
+    def test_unsubscribed_or_unused_tables_do_not_emit_availability_errors(self):
+        client = self.client('required_v2')
+        errors = []
+        client.on_error(errors.append)
+        nonce = self.negotiate(client)
+        self.status(client, nonce)
+        code = fixture().fields['code']
+        client.subscribe([code])
+        self.quote(client, fixture())
+        client.unsubscribe([code])
+        self.status(client, nonce, revision=2, ready=False)
+        self.assertEqual(errors, [])
+
+    def test_subscriptions_wait_for_commit_or_definite_legacy_fallback(self):
+        for fallback in (False, True):
+            client = self.client()
+            client._dispatch_message(proto.MsgType.AUTH_RESPONSE, 0, b'\x01', 1, client._conn)
+            client._authenticated = True
+            client.subscribe([fixture().fields['code']])
+            kinds = lambda: [proto.decode_header(f[:10])[2] for f in client._conn.sent]
+            self.assertEqual(kinds(), [cap.OFFER])
+            if fallback:
+                client._realtime.deadline = client._realtime_now() - 1
+                client._realtime_timeout(client._realtime.generation)
+                self.assertEqual(kinds(), [cap.OFFER, proto.MsgType.SUBSCRIBE_REQUEST])
+            else:
+                offer = cap.Capability.decode(client._conn.sent[0][10:])
+                ack = cap.intersection(cap.supported(cap.Role.CLOUD), offer)
+                client._dispatch_message(cap.ACK, 0, ack.encode(), 1, client._conn)
+                self.assertEqual(kinds(), [cap.OFFER, cap.COMMIT, proto.MsgType.SUBSCRIBE_REQUEST])
+
     def test_timeout_without_more_input_and_late_ack(self):
         client = self.client()
         client._dispatch_message(proto.MsgType.AUTH_RESPONSE, 0, b'\x01', 1, client._conn)

@@ -48,6 +48,7 @@ class RealtimeClientMixin:
         self._realtime_callbacks = []
         self._realtime_last_status = None
         self._realtime_last_error = None
+        self._realtime_lost_sources = 0
         self._realtime_watermarks = {}
         self._realtime_cache_sizes = {}
         self._realtime_cache_bytes = 0
@@ -91,9 +92,16 @@ class RealtimeClientMixin:
     def _notify_realtime_status(self):
         with self._realtime_lock:
             status = self._realtime_status_locked()
+            lost = self._realtime_lost_sources
+            self._realtime_lost_sources = 0
             if status == self._realtime_last_status:
                 return
             self._realtime_last_status = status
+        with self._subscribed_lock:
+            resume = (self._authenticated and self._subscription_protocol_ready
+                      and bool(self._subscribe_queue))
+        if resume:
+            self._resume_subscriptions()
         for callback in self._realtime_callbacks:
             try:
                 callback(status)
@@ -101,8 +109,10 @@ class RealtimeClientMixin:
                 logger.exception('Realtime status callback failed')
         if status.mode == 'required_v2' and status.phase in ('fallback', 'closed'):
             self._realtime_error(status.reason or status.phase)
-        elif status.mode == 'required_v2' and status.negotiated and status.revision:
-            missing = [table.source_table + ':' + table.reason for table in status.tables.values() if not table.ready]
+        elif status.mode == 'required_v2' and lost:
+            missing = [table + ':' + status.tables[table].reason
+                       for sid, (table, _) in SOURCES.items()
+                       if lost & cap.source_bit(sid) and not status.tables[table].ready]
             if missing:
                 self._realtime_error('full fields unavailable: ' + ', '.join(missing))
 
@@ -138,6 +148,7 @@ class RealtimeClientMixin:
             self._realtime.reset(self._realtime.generation + 1, False)
             self._realtime.reason = reason
             self._realtime_connection = None
+            self._realtime_lost_sources = 0
             self._invalidate_realtime_locked(all_quotes=True)
             while True:
                 try:
@@ -166,6 +177,11 @@ class RealtimeClientMixin:
         session.sent(generation, action, success, self._realtime_now())
 
     def _realtime_apply_locked(self):
+        # Subscription writes follow COMMIT, or a definite legacy fallback.
+        with self._subscribed_lock:
+            self._subscription_protocol_ready = (
+                self._realtime.phase == 'active'
+                or (self._realtime.mode == 'auto' and self._realtime.phase == 'fallback'))
         if self._realtime_connection:
             selected = self._realtime.selected
             self._realtime_connection._realtime_max_payload = (
@@ -225,7 +241,20 @@ class RealtimeClientMixin:
                 self._realtime_connection.abort_generation(self._realtime_transport_generation)
                 self._invalidate_realtime_locked(all_quotes=True)
                 return
+            previous_ready = {s.id for s in self._realtime.states if s.ready}
             action = self._realtime.receive(self._realtime.generation, msg_type, payload, self._realtime_now())
+            ready = {s.id for s in self._realtime.states if s.ready}
+            lost = previous_ready - ready
+            if ready - previous_ready:
+                self._realtime_last_error = None
+            # No-data startup is state, not loss of a subscribed full-field feed.
+            # Reuse delivered-row identities; do not guess a market from a ticker.
+            if lost:
+                with self._subscribed_lock:
+                    for sid, (source, _, _) in self._realtime_watermarks.items():
+                        if (source in lost and self._symbol_map.id_to_code(sid)
+                                in self._desired_subscriptions):
+                            self._realtime_lost_sources |= cap.source_bit(source)
             if action:
                 self._realtime_send_locked(action)
             self._realtime_apply_locked()
