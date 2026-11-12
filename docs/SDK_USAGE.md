@@ -1,6 +1,6 @@
 # rtdata SDK 使用手册
 
-本文对应 `0.3.8`，已包含 `Quote/Kline.to_datetime()`；旧 v0.3.7 用户需先升级。
+本文对应 `0.3.9`，包含实时协商修复及 `Quote/Kline.to_datetime()`。
 安装见 [README](../README.md)。Python 最低版本为 3.9。
 
 ## 1. 连接入口与生命周期

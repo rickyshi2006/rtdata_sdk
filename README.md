@@ -4,15 +4,16 @@
 
 ## 版本与安装
 
-当前包版本为 **0.3.8**，包含 `Quote/Kline.to_datetime()`、中文文档和更新后的示例。
+当前包版本为 **0.3.9**，修复首次订阅协商顺序和严格全字段模式的冷启动误报，
+保留 `Quote/Kline.to_datetime()`、中文文档和配套示例。
 旧 v0.3.7 没有该时间显示方法，使用新示例前请升级。
 功能以对应标签和 [发布说明](docs/RELEASE-NOTES.md) 为准。
 
-从 [GitHub Releases](https://github.com/rickyshi2006/rtdata_sdk/releases/tag/v0.3.8)
+从 [GitHub Releases](https://github.com/rickyshi2006/rtdata_sdk/releases/tag/v0.3.9)
 下载 wheel，以随包 `SHA256SUMS` 校验后安装（包括 Windows 等环境所需的时区数据）：
 
 ```bash
-python -m pip install --upgrade "./rtdata-0.3.8-py3-none-any.whl[market-time]"
+python -m pip install --upgrade "./rtdata-0.3.9-py3-none-any.whl[market-time]"
 python -c "import rtdata; print(rtdata.__version__, rtdata.__file__); print(hasattr(rtdata.Quote, 'to_datetime'))"
 ```
 
