@@ -1,6 +1,6 @@
 # 实时行情全字段说明
 
-本文对应 v0.3.8，已包含 `Quote/Kline.to_datetime()`；旧版用户需先升级。
+本文对应 v0.3.9，包含首次订阅协商与初始就绪通知修复，以及 `Quote/Kline.to_datetime()`。
 安装方式见 [README](../README.md)，时间转换见 [时间说明](TIME-AND-MARKETS.md)。
 包含持续监听和连接关闭的完整程序见 [示例索引](../examples/README.md)。
 

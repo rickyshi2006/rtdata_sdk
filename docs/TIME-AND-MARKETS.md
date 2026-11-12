@@ -101,7 +101,7 @@ end_now = datetime.now(timezone.utc)  # 精确的当前时刻；可作为 end �
 系统需提供 IANA 时区数据。Windows 或精简系统可随下载的 wheel 安装：
 
 ```bash
-python -m pip install --upgrade "./rtdata-0.3.8-py3-none-any.whl[market-time]"
+python -m pip install --upgrade "./rtdata-0.3.9-py3-none-any.whl[market-time]"
 ```
 
 时区依赖只提供转换数据，不能为旧版本增加 `to_datetime()` 方法。

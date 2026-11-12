@@ -2,19 +2,19 @@
 
 ## 源码与安装包分开核对
 
-- 当前包版本号为 `0.3.8`，发布产物以 GitHub Release/tag 为准。
-- 本版本包含 `Quote/Kline.to_datetime()`、中文文档和对应示例；旧 v0.3.7 用户需升级。
+- 当前包版本号为 `0.3.9`，发布产物以 GitHub Release/tag 为准。
+- 本版本修复首次订阅协商顺序和严格全字段模式冷启动误报，保留时间显示和配套示例。
 - 后续 main 仍可能领先正式版本，交付必须匹配包版本、标签和示例。
 - 用户安装说明以 [README](README.md) 为入口，参数与行为以
   [使用手册](docs/SDK_USAGE.md) 为准，避免在交付文档复制另一套过期接口说明。
-- v0.3.8 使用新标签和新附件，不替换 v0.3.7 或更旧的 Release 产物。
+- v0.3.9 使用新标签和新附件，不替换 v0.3.8 或更旧的 Release 产物。
 
 ## 安装与校验
 
 正式交付使用审核过的不可变 wheel/sdist 及 `SHA256SUMS`：
 
 ```bash
-python -m pip install --upgrade "./rtdata-0.3.8-py3-none-any.whl[market-time]"
+python -m pip install --upgrade "./rtdata-0.3.9-py3-none-any.whl[market-time]"
 python -c "import rtdata; print(rtdata.__version__, rtdata.__file__)"
 ```
 
