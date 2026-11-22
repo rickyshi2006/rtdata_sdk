@@ -9,6 +9,35 @@ permissions:
   contents: read
 
 jobs:
+  numeric-native:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022, macos-14]
+        python-version: ["3.9", "3.12", "3.13"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Build optional native wheel from source distribution
+        run: |
+          python -m pip install --upgrade build
+          python -m build native --outdir native-dist
+      - name: Install platform wheel and verify bit-exact SDK decoding
+        shell: bash
+        run: |
+          python -m pip install .
+          python -m pip install --no-deps native-dist/*.whl
+          python -I -c "import pathlib, sys, rtdata; from rtdata import _numeric_codec; assert pathlib.Path(rtdata.__file__).is_relative_to(sys.prefix); assert _numeric_codec.available()"
+          python -I -m unittest discover -s tests -p test_numeric_codec.py -v
+          python -I -m unittest discover -s tests -p test_realtime_block_client.py -v
+      - uses: actions/upload-artifact@v4
+        with:
+          name: numeric-native-${{ matrix.os }}-${{ matrix.python-version }}
+          path: native-dist/*
+
   test:
     runs-on: ubuntu-24.04
     strategy:
@@ -57,10 +86,14 @@ jobs:
           assert Path(rtdata.__file__).is_relative_to(Path(sys.prefix))
           for factory in (rtdata.RtdataClient, rtdata.API):
               assert inspect.signature(factory).parameters['realtime_protocol'].default == 'auto'
+              assert inspect.signature(factory).parameters['realtime_numeric'].default is False
               assert all(p.kind != inspect.Parameter.VAR_KEYWORD
                          for p in inspect.signature(factory).parameters.values())
               assert inspect.signature(factory).parameters['history_v2_advertise'].default is True
               assert inspect.signature(factory).parameters['history_v2_default'].default is True
+              for method in ('get_markets', 'subscribe_market', 'subscribe_markets',
+                             'unsubscribe_market'):
+                  assert callable(getattr(factory, method))
           assert zstd_available()
           assert HistoryV2RequestState is not None
           print(f"verified rtdata {rtdata.__version__} with History V2")

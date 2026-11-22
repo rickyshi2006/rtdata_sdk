@@ -269,6 +269,8 @@ class ExamplesTest(unittest.TestCase):
                         patch.object(rtdata, "API", return_value=api) as factory, \
                         patch("socket.socket") as socket, \
                         patch("logging.basicConfig"), \
+                        patch.object(sys, "argv", [path.name, '--market', 'us_equity']
+                                     if path.stem == 'subscribe_market' else [path.name]), \
                         patch("time.sleep", side_effect=KeyboardInterrupt), \
                         contextlib.redirect_stdout(io.StringIO()) as output:
                     module.main()

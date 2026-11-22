@@ -1,0 +1,12 @@
+[build-system]
+requires = ["setuptools>=70", "wheel>=0.43"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rtdata-numeric-codec"
+version = "0.1.0.dev0"
+description = "Optional bounded numeric byte restoration for rtdata"
+requires-python = ">=3.9"
+
+[tool.setuptools.packages.find]
+include = ["rtdata_numeric_codec*"]

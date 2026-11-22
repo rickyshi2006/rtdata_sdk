@@ -66,6 +66,10 @@ jobs:
                          for p in inspect.signature(factory).parameters.values())
               assert inspect.signature(factory).parameters['history_v2_advertise'].default is True
               assert inspect.signature(factory).parameters['history_v2_default'].default is True
+              assert inspect.signature(factory).parameters['realtime_numeric'].default is False
+              for method in ('get_markets', 'subscribe_market', 'subscribe_markets',
+                             'unsubscribe_market'):
+                  assert callable(getattr(factory, method))
           assert zstd_available()
           assert HistoryV2RequestState is not None
           print(f"verified rtdata {rtdata.__version__} with History V2")

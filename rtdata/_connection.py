@@ -50,6 +50,7 @@ class Connection:
         self._on_reconnected: Optional[Callable] = None
         self._on_before_reconnect: Optional[Callable] = None  # 重连前（discovery 等）
         self._on_reconnect_completed: Optional[Callable] = None
+        self._on_poll: Optional[Callable] = None
 
         # 防止并发重连
         self._reconnect_lock = threading.Lock()
@@ -197,6 +198,8 @@ class Connection:
             try:
                 if self._sock is not sock or self._generation != generation:
                     break
+                if self._on_poll is not None:
+                    self._on_poll(self, generation)
                 # 设置超时以便检查 stop_event
                 sock.settimeout(1.0)
                 try:
@@ -220,6 +223,16 @@ class Connection:
                     if payload_len > proto.MAX_PAYLOAD_SIZE:
                         logger.error(f"Invalid payload_length: {payload_len}")
                         self._handle_disconnect("protocol error", sock)
+                        return
+
+                    if msg_type in (0x71, 0x72) and (symbol_id or payload_len > 65536):
+                        self._handle_disconnect("invalid market frame header", sock)
+                        return
+
+                    if 0x65 <= msg_type <= 0x69 and (symbol_id or
+                            (msg_type == 0x69 and not 20 < payload_len <= 65536) or
+                            (msg_type != 0x69 and (msg_type not in (0x66, 0x68) or payload_len != 32))):
+                        self._handle_disconnect("invalid realtime block header", sock)
                         return
 
                     if 0x60 <= msg_type <= 0x64 and (

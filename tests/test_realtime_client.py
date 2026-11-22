@@ -354,14 +354,19 @@ class RealtimeClientTest(unittest.TestCase):
         nonce = self.negotiate(client)
         self.status(client, nonce)
         self.quote(client, fixture())
-        client._realtime_cache_bytes = 16 * 1024 * 1024
+        client._realtime_cache_limit = 1024
+        seen = []
+        client.on_quote(seen.append)
         fields = dict(fixture(seq=2).fields)
         fields['trading_phase_code'] = 'X' * 1024
         self.quote(client, wire.Snapshot.from_fields(1, 91, 2, fields))
         self.assertIsNone(client.get_quote(fields['code']))
         self.assertEqual(client._realtime_watermarks[1][2], 2)
+        self.assertEqual(len(seen), 1)
+        self.assertTrue(client._quote_is_current(seen[0]))
         client._reset_realtime('capacity_test')
         client._realtime_cache_bytes = 0
+        client._realtime_cache_limit = 16 * 1024 * 1024
         nonce = self.negotiate(client)
         self.status(client, nonce)
         self.quote(client, fixture())
@@ -370,6 +375,31 @@ class RealtimeClientTest(unittest.TestCase):
         client._handle_symbol_map(struct.pack('!IIH', 1, 1, len(code)) + code)
         self.assertFalse(client._quote_cache)
         self.assertEqual(client.realtime_statistics['tracked_symbols'], 0)
+
+    def test_more_than_65536_watermarks_and_cache_eviction_keep_delivery(self):
+        client = self.client()
+        nonce = self.negotiate(client)
+        self.status(client, nonce)
+        client._realtime_watermarks.update((sid, (1, 91, 1, 0)) for sid in range(2, 65538))
+        seen = []
+        client.on_quote(seen.append)
+        self.quote(client, fixture())
+        self.assertEqual(len(seen), 1)
+        self.assertGreater(client.realtime_statistics['tracked_symbols'], 65536)
+        original = seen[0]
+        client._realtime_cache_limit = len(wire.encode(fixture())) + 16
+        client._symbol_map.update_from_dict({1: fixture().fields['code'], 70000: 'NEW.SH'})
+        self.quote(client, fixture(code='NEW.SH'), sid=70000)
+        self.assertIsNone(client.get_quote(original.symbol))
+        self.assertTrue(client._quote_is_current(original))
+        self.assertEqual(len(seen), 2)
+        self.assertGreater(client.realtime_statistics['cache_evictions'], 0)
+        with client._realtime_lock:
+            client._invalidate_realtime_locked(cap.source_bit(1))
+        self.quote(client, fixture())
+        self.assertFalse(client._quote_is_current(original))
+        client._reset_realtime('test')
+        self.assertFalse(client._quote_is_current(original))
 
     def test_close_and_replaced_disconnect_cannot_repopulate_cache(self):
         client = self.client('legacy')

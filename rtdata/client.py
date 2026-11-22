@@ -18,7 +18,7 @@ import time
 import logging
 import queue
 import struct
-from collections import deque
+from collections import deque, OrderedDict
 from datetime import datetime, date
 from typing import Callable, Optional, List, Dict, Iterator, Tuple, Union
 
@@ -36,6 +36,7 @@ from ._history_time import normalize_endpoint, market_zone, exclusive_end
 from ._history_v2_stream import HistoryV2RequestState
 from ._symbol_map import SymbolMap
 from ._subscription_client import SubscriptionClientMixin
+from ._market_subscription import MarketSubscriptionMixin, RESPONSE as MARKET_RESPONSE, IDENTITIES as MARKET_IDENTITIES
 from .models import Quote, Kline, FinanceData, TokenStatus
 from .exceptions import (
     AuthenticationError, ConnectionError, SymbolNotFoundError,
@@ -87,7 +88,7 @@ class _HistoryV2DecodeQueue:
             return item
 
 
-class RtdataClient(RealtimeClientMixin, SubscriptionClientMixin):
+class RtdataClient(RealtimeClientMixin, SubscriptionClientMixin, MarketSubscriptionMixin):
 
     def __init__(
         self,
@@ -110,6 +111,7 @@ class RtdataClient(RealtimeClientMixin, SubscriptionClientMixin):
         session_rehome_advertise: bool = True,
         session_capability_ack_timeout: float = 5.0,
         realtime_protocol: str = 'auto',
+        realtime_numeric: bool = False,
     ):
         self._token = token
         self._host = host
@@ -166,10 +168,11 @@ class RtdataClient(RealtimeClientMixin, SubscriptionClientMixin):
         self._token_status: Optional[TokenStatus] = None
         self._symbol_map_event = threading.Event()
         self._init_subscriptions()
+        self._init_markets()
 
-        self._quote_cache: Dict[str, Quote] = {}
+        self._quote_cache: Dict[str, Quote] = OrderedDict()
         self._quote_cache_lock = threading.Lock()
-        self._init_realtime(realtime_protocol)
+        self._init_realtime(realtime_protocol, realtime_numeric)
 
         self._next_request_id = 1
         self._request_id_lock = threading.Lock()
@@ -270,6 +273,7 @@ class RtdataClient(RealtimeClientMixin, SubscriptionClientMixin):
             auto_reconnect=self._auto_reconnect,
         )
         connection = self._conn
+        connection._on_poll = self._poll_markets
         connection._on_disconnected = lambda reason: self._handle_connection_disconnected(connection, reason)
         self._conn._on_reconnected = self._handle_reconnected
         self._conn._on_before_reconnect = self._before_reconnect
@@ -1046,11 +1050,16 @@ class RtdataClient(RealtimeClientMixin, SubscriptionClientMixin):
     def get_quote(self, symbol: str) -> Optional[Quote]:
         with self._quote_cache_lock:
             quote = self._quote_cache.get(symbol)
+        if quote is not None and not self._quote_is_current(quote):
+            quote = None
         if self._realtime.mode == 'required_v2' and (quote is None or quote.wire_version != 2):
             raise RealtimeUnavailableError(f'full-field quote unavailable for {symbol}; inspect realtime_status.tables')
         return quote
 
     def get_subscribed_symbols(self) -> List[str]:
+        with self._market_changed:
+            if self._market_ready:
+                return list(self._market_identities.values())
         with self._subscribed_lock:
             return list(self._subscribed_codes)
 
@@ -1088,10 +1097,14 @@ class RtdataClient(RealtimeClientMixin, SubscriptionClientMixin):
 
         if msg_type == proto.MsgType.AUTH_RESPONSE:
             self._handle_auth_response(payload)
+        elif msg_type in (MARKET_RESPONSE, MARKET_IDENTITIES):
+            self._handle_market_control(msg_type, symbol_id, payload, connection_generation, source_connection)
         elif msg_type in (realtime_cap.ACK, realtime_cap.SOURCE_STATUS):
             self._handle_realtime_control(msg_type, symbol_id, payload, connection_generation, source_connection)
         elif msg_type == realtime_cap.SNAPSHOT:
             self._handle_full_snapshot(symbol_id, payload, connection_generation, source_connection)
+        elif 0x65 <= msg_type <= 0x69:
+            self._handle_realtime_block(msg_type, symbol_id, payload, connection_generation, source_connection)
         elif msg_type == proto.MsgType.CAPABILITY_ACK:
             self._handle_history_capability_ack(payload)
         elif msg_type == proto.MsgType.SESSION_CAPABILITY_ACK:
@@ -1138,6 +1151,7 @@ class RtdataClient(RealtimeClientMixin, SubscriptionClientMixin):
                 self._token_status = None
         if success:
             logger.info("Authenticated")
+            self._begin_markets(payload)
             self._begin_realtime(payload)
             self._begin_history_capability_negotiation()
             self._begin_session_capability_negotiation()
@@ -1349,7 +1363,9 @@ class RtdataClient(RealtimeClientMixin, SubscriptionClientMixin):
             return
         quotes_raw = proto.decode_snapshot(payload, header_symbol_id)
         for (sid, bid, ask, last, volume, timestamp) in quotes_raw:
-            code = self._symbol_map.id_to_code(sid)
+            code = self._market_code(sid)
+            if self._market_ready and code is None:
+                continue
             if code is None:
                 code = self._symbol_map.id_to_code(header_symbol_id)
             if code is None:
@@ -1376,6 +1392,7 @@ class RtdataClient(RealtimeClientMixin, SubscriptionClientMixin):
                     return
                 if generation is not None and self._conn is not None and generation != self._conn.generation:
                     return
+                object.__setattr__(quote, '_delivery_generation', self._realtime.generation)
                 with self._quote_cache_lock:
                     self._quote_cache[code] = quote
                 self._realtime_cache_bytes -= self._realtime_cache_sizes.pop(code, 0)
@@ -1387,7 +1404,7 @@ class RtdataClient(RealtimeClientMixin, SubscriptionClientMixin):
             self._dispatch_quote(quote)
 
     def _dispatch_quote(self, quote: Quote):
-        if not self._quote_callbacks or not self._quote_is_current(quote):
+        if not self._quote_callbacks or not self._quote_is_current(quote, latest=False):
             return
 
         if not self._async_callbacks:
@@ -1419,7 +1436,7 @@ class RtdataClient(RealtimeClientMixin, SubscriptionClientMixin):
 
     def _run_quote_callbacks(self, quote: Quote):
         for cb in self._quote_callbacks:
-            if not self._quote_is_current(quote):
+            if not self._quote_is_current(quote, latest=False):
                 return
             try:
                 cb(quote)
