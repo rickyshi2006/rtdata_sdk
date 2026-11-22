@@ -162,7 +162,7 @@ print(api.realtime_status)
 ## 按市场分类订阅
 
 七类市场整类订阅接口见 [按市场分类订阅](docs/MARKET-SUBSCRIPTIONS.md)。
-使用 `api.subscribe_markets(["cn_equity"]).wait_applied(timeout=30)`，无需本地品种目录；
+使用 `api.subscribe_markets(["cn_equity"]).wait_applied()`，无需本地品种目录；
 需要服务端支持该能力，等待应用完成不等于已收到行情。
 分类供数状态与订阅成功回执分开，可通过 `market_feed_status` 和
 `on_market_feed_status` 查看暂停、部分可用及恢复。

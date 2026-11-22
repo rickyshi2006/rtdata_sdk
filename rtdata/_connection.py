@@ -225,7 +225,8 @@ class Connection:
                         self._handle_disconnect("protocol error", sock)
                         return
 
-                    if msg_type in (0x71, 0x72) and (symbol_id or payload_len > 65536):
+                    if msg_type in (0x71, 0x72, 0x74) and (symbol_id or payload_len > 65536 or
+                                                           (msg_type == 0x74 and payload_len < 64)):
                         self._handle_disconnect("invalid market frame header", sock)
                         return
 

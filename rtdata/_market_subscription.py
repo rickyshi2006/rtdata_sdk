@@ -8,11 +8,13 @@ import time
 import logging
 
 from . import _protocol as proto
+from . import _market_identity_wire as identity_wire
 from .exceptions import ConnectionError, RtdataError
 
 MARKETS = ('cn_equity', 'hk_equity', 'futures', 'us_equity', 'fx',
            'overseas_futures', 'crypto')
 REQUEST, RESPONSE, IDENTITIES, IDENTITY_ACK = 0x70, 0x71, 0x72, 0x73
+BINARY_IDENTITIES = identity_wire.MESSAGE_TYPE
 MAX_SYMBOLS, MAX_CONTROL_BYTES = 250000, 65536
 MAX_QUEUED_OPERATIONS, MAX_QUEUED_BYTES = 64, 1024 * 1024
 TERMINAL = ('applied', 'rejected', 'incomplete', 'disconnected', 'negotiated', 'catalog', 'issues')
@@ -29,10 +31,15 @@ class MarketSubscription:
         self._event = threading.Event()
         self._bytes = 0
         self._deadline = None
+        self._hard_deadline = None
 
-    def wait_applied(self, timeout=30):
+    def wait_applied(self, timeout=None):
         """等待本次操作应用完成；超时不会自动取消服务器上的操作。"""
-        if not self._event.wait(timeout):
+        started = time.monotonic()
+        completed = self._event.wait(30 if timeout is None else timeout)
+        if not completed and timeout is None and self._client._market_binary:
+            completed = self._event.wait(max(0, 125 - (time.monotonic() - started)))
+        if not completed:
             raise TimeoutError('market subscription timeout; inspect status before retrying')
         result = self.status()
         if result['state'] not in ('applied', 'negotiated', 'catalog', 'issues'):
@@ -79,6 +86,13 @@ class MarketSubscriptionMixin:
         self._market_queued_bytes = 0
         self._market_retry_at = 0
         self._market_stage_deadline = None
+        self._market_binary = self._market_zstd = False
+        self._market_epoch = 0
+        self._market_cache = {}
+        self._market_cache_offer = {}
+        self._market_hard_deadline = None
+        self._market_replay_credit = False
+        self._market_replay_checkpoint = 0
 
     def _reset_markets(self):
         with self._market_changed:
@@ -96,6 +110,13 @@ class MarketSubscriptionMixin:
             self._market_restore = False
             self._market_retry_at = 0
             self._market_stage_deadline = None
+            self._market_binary = self._market_zstd = False
+            self._market_epoch = 0
+            self._market_cache = {}
+            self._market_cache_offer = {}
+            self._market_hard_deadline = None
+            self._market_replay_credit = False
+            self._market_replay_checkpoint = 0
             self._market_inflight = None
             self._market_ready = self._market_peer = False
             self._market_connection = None
@@ -123,14 +144,17 @@ class MarketSubscriptionMixin:
             self._market_connection = self._conn
             self._market_generation = self._conn.generation
             self._market_restore = True
-            handle = MarketSubscription(self, {'op': 'hello', 'symbol_capacity': MAX_SYMBOLS, 'feed_status_v1': True})
+            handle = MarketSubscription(self, {'op': 'hello', 'symbol_capacity': MAX_SYMBOLS, 'feed_status_v1': True,
+                                              'replay_credit_v1': True,
+                                               'identity_binary_v1': True, 'identity_zstd_v1': identity_wire.available()})
             self._enqueue_market_locked(handle)
             self._flush_markets_locked()
 
     @staticmethod
     def _market_size(fields):
         probe = dict(fields, version=1, request_id=2**64 - 1)
-        return len(json.dumps(probe, ensure_ascii=True, separators=(',', ':')).encode('ascii'))
+        reserve = 512 if fields.get('op') in ('subscribe', 'unsubscribe', 'clear') else 0
+        return len(json.dumps(probe, ensure_ascii=True, separators=(',', ':')).encode('ascii')) + reserve
 
     def _enqueue_market_locked(self, handle):
         handle._bytes = self._market_size(handle._fields)
@@ -197,7 +221,7 @@ class MarketSubscriptionMixin:
             restore = MarketSubscription(self, dict(op='subscribe', markets=list(self._market_restore_markets)))
             self._market_restore_markets = ()
         elif ready and not retry and self._market_restore_offset < len(self._market_restore_codes):
-            codes, size = [], 128
+            codes, size = [], 640
             while self._market_restore_offset < len(self._market_restore_codes) and len(codes) < 512:
                 code = self._market_restore_codes[self._market_restore_offset]
                 encoded_size = len(json.dumps(code, ensure_ascii=True)) + 1
@@ -227,9 +251,15 @@ class MarketSubscriptionMixin:
         handle._fields.update(version=1, request_id=self._market_request_id)
         self._market_inflight = restore or self._market_queue.popleft()
         if handle._deadline is None:
-            handle._deadline = time.monotonic() + (10 if handle._fields['op'] == 'hello' else 35)
+            now = time.monotonic()
+            handle._deadline = now + (10 if handle._fields['op'] == 'hello' else 35)
+            handle._hard_deadline = now + (125 if self._market_binary else 35)
+        self._market_hard_deadline = handle._hard_deadline
+        fields = dict(handle._fields)
+        if self._market_binary and fields['op'] in ('subscribe', 'unsubscribe', 'clear'):
+            fields.update(self._market_cache_offer)
         try:
-            self._market_send_locked(REQUEST, handle._fields)
+            self._market_send_locked(REQUEST, fields)
         except ConnectionError:
             self._abort_markets_locked('market_control_send_failed')
             raise
@@ -393,10 +423,28 @@ class MarketSubscriptionMixin:
             try:
                 if symbol or len(payload) > MAX_CONTROL_BYTES:
                     raise ValueError('invalid market frame')
-                body = json.loads(payload)
+                if kind == BINARY_IDENTITIES:
+                    if not self._market_binary:
+                        raise ValueError('unnegotiated binary identities')
+                    body = identity_wire.decode(payload, self._market_zstd)
+                    if body['identity_epoch'] != self._market_epoch:
+                        raise ValueError('market identity epoch changed')
+                else:
+                    body = json.loads(payload)
                 if not isinstance(body, dict) or type(body.get('version')) is not int or body['version'] != 1:
                     raise ValueError('invalid market version')
-                if kind == IDENTITIES:
+                if kind == RESPONSE and body.get('state') == 'replay_checkpoint':
+                    serial = body.get('checkpoint')
+                    if (not self._market_replay_credit or type(body.get('request_id')) is not int
+                            or body['request_id'] != 0 or type(serial) is not int
+                            or serial != self._market_replay_checkpoint + 1 or serial > 2**64 - 1):
+                        raise ValueError('invalid replay checkpoint')
+                    self._market_send_locked(IDENTITY_ACK, {'version': 1, 'replay_checkpoint': serial})
+                    self._market_replay_checkpoint = serial
+                    return
+                if kind in (IDENTITIES, BINARY_IDENTITIES):
+                    if self._market_binary != (kind == BINARY_IDENTITIES):
+                        raise ValueError('market identity codec changed')
                     self._market_identity_locked(body)
                     return
                 rid = body.get('request_id')
@@ -419,6 +467,21 @@ class MarketSubscriptionMixin:
                     if not rid or handle is None or handle._fields['op'] != 'hello':
                         raise ValueError('unexpected market negotiation')
                     self._market_ready = True
+                    self._market_binary = body.get('identity_binary_v1') is True
+                    self._market_zstd = self._market_binary and body.get('identity_zstd_v1') is True
+                    self._market_replay_credit = body.get('replay_credit_v1') is True
+                    if self._market_replay_credit and (
+                            type(body.get('replay_window_bytes')) is not int or body['replay_window_bytes'] != 65536
+                            or type(body.get('replay_window_checkpoints')) is not int
+                            or body['replay_window_checkpoints'] != 4):
+                        raise ValueError('invalid replay window')
+                    if self._market_binary:
+                        if (body.get('identity_idle_timeout_ms') != 30000 or
+                                body.get('identity_total_timeout_ms') != 120000 or
+                                type(body.get('identity_epoch')) is not int or body['identity_epoch'] < 0 or
+                                (self._market_zstd and not identity_wire.available())):
+                            raise ValueError('invalid identity negotiation')
+                        self._market_epoch = body['identity_epoch']
                     self._market_feed_supported = body.get('feed_status_v1') is True
                     self._market_feed_status = {'state': 'pending' if self._market_feed_supported else 'unsupported', 'markets': []}
                 retired = ()
@@ -427,6 +490,8 @@ class MarketSubscriptionMixin:
                     if (stage is None or stage['generation'] != body['generation'] or not stage['done']
                             or stage['request_id'] != rid or type(body['admitted_count']) is not int):
                         raise ValueError('application before identity barrier')
+                    if self._market_binary and body.get('catalog_revision') != stage['catalog_revision']:
+                        raise ValueError('application revision mismatch')
                     identities = self._market_identities
                     retired = tuple((sid, identities.get(sid)) for sid in stage['removed'])
                     for sid in stage['removed']:
@@ -441,6 +506,24 @@ class MarketSubscriptionMixin:
                     self._market_codes.update((code, sid) for sid, code in stage['added'].items())
                     if len(identities) != body['admitted_count'] or len(identities) > MAX_SYMBOLS:
                         raise ValueError('market identity count mismatch')
+                    if self._market_binary and 'cache_generation' in body:
+                        cache_gen = body['cache_generation']
+                        if type(cache_gen) is not int or not 0 <= cache_gen <= body['generation']:
+                            raise ValueError('invalid identity cache generation')
+                        if not cache_gen:
+                            self._market_cache = {}
+                            self._market_cache_offer = {}
+                        elif cache_gen != self._market_cache_offer.get('cache_generation'):
+                            if (cache_gen != body['generation'] or body['cache_revision'] != stage['catalog_revision']
+                                    or body['cache_epoch'] != self._market_epoch):
+                                raise ValueError('invalid identity cache context')
+                            self._market_cache = {sid: (code, self._market_sources[sid])
+                                                  for sid, code in identities.items()}
+                            self._market_cache_offer = {key: body[key] for key in
+                                                        ('cache_generation', 'cache_revision', 'cache_epoch')}
+                        elif any(body.get(key) != self._market_cache_offer[key] for key in
+                                 ('cache_revision', 'cache_epoch')):
+                            raise ValueError('identity cache context changed')
                     self._market_stage = None
                     self._market_stage_deadline = None
                     if rid and handle:
@@ -490,6 +573,12 @@ class MarketSubscriptionMixin:
                 self._desired_subscriptions.pop(code, None)
 
     def _market_identity_locked(self, body):
+        now = time.monotonic()
+        if self._market_binary:
+            handle = self._market_inflight
+            deadline = handle._deadline if handle and body.get('request_id') else self._market_stage_deadline
+            if deadline is not None and now >= deadline:
+                raise ValueError('identity progress after deadline')
         for key in ('generation', 'request_id', 'offset', 'next_offset', 'total'):
             if type(body.get(key)) is not int or body[key] < 0:
                 raise ValueError('invalid identity cursor')
@@ -507,10 +596,14 @@ class MarketSubscriptionMixin:
             raise ValueError('unexpected identity request')
         stage = self._market_stage
         if stage is None:
+            if self._market_binary and body['generation'] <= self._market_committed_generation:
+                raise ValueError('stale identity generation')
             stage = {key: body[key] for key in ('generation', 'request_id', 'catalog_revision', 'total')}
             stage.update(offset=0, added={}, sources={}, removed=set(), codes=set(), done=False)
             self._market_stage = stage
             self._market_stage_deadline = time.monotonic() + 35
+            if self._market_binary and not body['request_id']:
+                self._market_hard_deadline = time.monotonic() + 125
         if (stage['done'] or stage['offset'] != body['offset'] or any(stage[key] != body[key]
                 for key in ('generation', 'request_id', 'catalog_revision', 'total'))):
             raise ValueError('identity generation or cursor mismatch')
@@ -522,10 +615,18 @@ class MarketSubscriptionMixin:
                 if sid not in self._market_identities:
                     raise ValueError('removing unknown identity')
                 stage['removed'].add(sid)
-            elif entry['action'] == 'add':
+            elif entry['action'] in ('add', 'reference'):
+                if entry['action'] == 'reference':
+                    if (not self._market_binary or sid not in self._market_cache or
+                            self._market_cache_offer.get('cache_revision') != body['catalog_revision'] or
+                            self._market_cache_offer.get('cache_epoch') != body.get('identity_epoch')):
+                        raise ValueError('missing identity cache reference')
+                    cached_code, cached_source = self._market_cache[sid]
+                    entry = dict(entry, code=cached_code, category=MARKETS[cached_source - 1] if cached_source else '')
                 code = entry['code']
                 if (not isinstance(code, str) or not 1 <= len(code) <= 256
-                        or any(not 32 <= ord(c) < 127 for c in code) or code in stage['codes']
+                        or (not self._market_binary and any(not 32 <= ord(c) < 127 for c in code))
+                        or '\0' in code or code in stage['codes']
                         or sid in self._market_identities):
                     raise ValueError('invalid identity code')
                 stage['added'][sid] = code
@@ -537,5 +638,9 @@ class MarketSubscriptionMixin:
             else:
                 raise ValueError('invalid identity action')
         stage['offset'], stage['done'] = body['next_offset'], body['done']
+        if self._market_binary:
+            self._market_stage_deadline = min(self._market_hard_deadline, time.monotonic() + 35)
+            if handle and body['request_id']:
+                handle._deadline = self._market_stage_deadline
         self._market_send_locked(IDENTITY_ACK, {key: body[key] for key in
             ('version', 'generation', 'catalog_revision', 'next_offset')})
