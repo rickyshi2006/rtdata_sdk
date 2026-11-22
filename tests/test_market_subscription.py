@@ -271,6 +271,8 @@ class MarketLoopbackTests(unittest.TestCase):
         return rows
 
     def setUp(self):
+        if not os.environ.get('RTDATA_MARKET_TEST_SERVER'):
+            self.skipTest('需要隔离测试服务程序')
         self.folder = tempfile.TemporaryDirectory()
         self.addCleanup(self.folder.cleanup)
         root = Path(self.folder.name)
