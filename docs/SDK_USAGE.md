@@ -1,6 +1,6 @@
 # rtdata SDK 使用手册
 
-本文对应 `0.4.0`，包含市场分类订阅、无损块接收及 `Quote/Kline.to_datetime()`。
+本文对应 `0.4.1`，包含市场分类订阅、无损块接收及 `Quote/Kline.to_datetime()`。
 安装见 [README](../README.md)。Python 最低版本为 3.9。
 
 ## 1. 连接入口与生命周期

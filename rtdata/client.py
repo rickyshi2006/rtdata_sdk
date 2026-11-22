@@ -37,6 +37,7 @@ from ._history_v2_stream import HistoryV2RequestState
 from ._symbol_map import SymbolMap
 from ._subscription_client import SubscriptionClientMixin
 from ._market_subscription import MarketSubscriptionMixin, RESPONSE as MARKET_RESPONSE, IDENTITIES as MARKET_IDENTITIES
+from ._market_subscription import BINARY_IDENTITIES as MARKET_BINARY_IDENTITIES
 from .models import Quote, Kline, FinanceData, TokenStatus
 from .exceptions import (
     AuthenticationError, ConnectionError, SymbolNotFoundError,
@@ -1097,7 +1098,7 @@ class RtdataClient(RealtimeClientMixin, SubscriptionClientMixin, MarketSubscript
 
         if msg_type == proto.MsgType.AUTH_RESPONSE:
             self._handle_auth_response(payload)
-        elif msg_type in (MARKET_RESPONSE, MARKET_IDENTITIES):
+        elif msg_type in (MARKET_RESPONSE, MARKET_IDENTITIES, MARKET_BINARY_IDENTITIES):
             self._handle_market_control(msg_type, symbol_id, payload, connection_generation, source_connection)
         elif msg_type in (realtime_cap.ACK, realtime_cap.SOURCE_STATUS):
             self._handle_realtime_control(msg_type, symbol_id, payload, connection_generation, source_connection)

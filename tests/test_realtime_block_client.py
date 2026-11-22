@@ -74,6 +74,14 @@ class RealtimeBlockClientTest(unittest.TestCase):
         self.assertEqual(client.realtime_statistics['compressed_events'], 4)
         self.assertEqual(client.realtime_statistics['compressed_wire_bytes'], 10 + len(payload))
 
+    def test_subscriptions_wait_for_block_ready(self):
+        client = self.client()
+        self.assertFalse(client._subscription_protocol_ready)
+        with patch.object(client, '_resume_subscriptions') as resume:
+            self.activate(client)
+            self.assertTrue(client._subscription_protocol_ready)
+            resume.assert_called_once()
+
     def test_numeric_requires_explicit_option_native_and_strict_hint(self):
         for requested, hint, native, expected in (
                 (False, True, True, False), (True, True, False, False),

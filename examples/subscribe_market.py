@@ -10,7 +10,7 @@ else:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="按分类订阅当前目录全部品种（未发布能力）")
+    parser = argparse.ArgumentParser(description="按分类订阅当前目录全部品种")
     parser.add_argument('--market', required=True, choices=(
         'cn_equity', 'hk_equity', 'futures', 'us_equity', 'fx', 'overseas_futures', 'crypto'))
     args = parser.parse_args()

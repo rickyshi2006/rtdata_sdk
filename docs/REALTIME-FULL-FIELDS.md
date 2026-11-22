@@ -1,6 +1,6 @@
 # 实时行情全字段说明
 
-本文对应 v0.4.0，包含市场分类订阅、无损块接收及 `Quote/Kline.to_datetime()`。
+本文对应 v0.4.1，包含市场分类订阅、无损块接收及 `Quote/Kline.to_datetime()`。
 安装方式见 [README](../README.md)，时间转换见 [时间说明](TIME-AND-MARKETS.md)。
 包含持续监听和连接关闭的完整程序见 [示例索引](../examples/README.md)。
 

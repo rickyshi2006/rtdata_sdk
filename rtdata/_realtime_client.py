@@ -212,7 +212,7 @@ class RealtimeClientMixin:
         # Subscription writes follow COMMIT, or a definite legacy fallback.
         with self._subscribed_lock:
             self._subscription_protocol_ready = (
-                self._realtime.phase == 'active'
+                (self._realtime.phase == 'active' and self._block_phase in ('off', 'active'))
                 or (self._realtime.mode == 'auto' and self._realtime.phase == 'fallback'))
         if self._realtime_connection:
             selected = self._realtime.selected
@@ -298,6 +298,7 @@ class RealtimeClientMixin:
 
     def _handle_realtime_block(self, kind, symbol, payload, generation, connection):
         inner = ()
+        resume = False
         with self._realtime_lock:
             if not self._realtime_current_locked(generation, connection):
                 return
@@ -318,6 +319,8 @@ class RealtimeClientMixin:
                     if self._block_timer:
                         self._block_timer.cancel()
                         self._block_timer = None
+                    self._realtime_apply_locked()
+                    resume = True
                 elif kind == block.DATA and self._block_phase == 'active':
                     is_numeric = self._block_numeric and payload[:4] == b'RBN1'
                     raw = numeric_codec.decode(payload, transport=True) if is_numeric else block.decode(payload)
@@ -335,6 +338,10 @@ class RealtimeClientMixin:
                 self._realtime_rejected += 1
                 self._block_fail_locked()
                 return
+        if resume:
+            self._resume_subscriptions()
+            if getattr(self, '_market_peer', False):
+                self._resume_markets()
         # Existing per-event permission/source/watermark checks and callback
         # ordering still apply. Do not recursively count inner bytes as wire.
         for sid, body, row in inner:

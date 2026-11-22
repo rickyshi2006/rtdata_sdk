@@ -4,16 +4,16 @@
 
 ## 版本与安装
 
-当前包版本为 **0.4.0**，新增七类市场整类订阅、分类供数状态和自动无损块接收，
+当前包版本为 **0.4.1**，支持七类市场整类订阅、分类供数状态和自动无损块接收，
 保留全字段行情、`Quote/Kline.to_datetime()`、中文文档和配套示例。
 旧 v0.3.7 没有该时间显示方法，使用新示例前请升级。
 功能以对应标签和 [发布说明](docs/RELEASE-NOTES.md) 为准。
 
-从 [GitHub Releases](https://github.com/rickyshi2006/rtdata_sdk/releases/tag/v0.4.0)
+从 [GitHub Releases](https://github.com/rickyshi2006/rtdata_sdk/releases/tag/v0.4.1)
 下载 wheel，以随包 `SHA256SUMS` 校验后安装（包括 Windows 等环境所需的时区数据）：
 
 ```bash
-python -m pip install --upgrade "./rtdata-0.4.0-py3-none-any.whl[market-time]"
+python -m pip install --upgrade "./rtdata-0.4.1-py3-none-any.whl[market-time]"
 python -c "import rtdata; print(rtdata.__version__, rtdata.__file__); print(hasattr(rtdata.Quote, 'to_datetime'))"
 ```
 
@@ -162,7 +162,7 @@ print(api.realtime_status)
 ## 按市场分类订阅
 
 七类市场整类订阅接口见 [按市场分类订阅](docs/MARKET-SUBSCRIPTIONS.md)。
-使用 `api.subscribe_markets(["cn_equity"]).wait_applied(timeout=30)`，无需本地品种目录；
+使用 `api.subscribe_markets(["cn_equity"]).wait_applied()`，无需本地品种目录；
 需要服务端支持该能力，等待应用完成不等于已收到行情。
 分类供数状态与订阅成功回执分开，可通过 `market_feed_status` 和
 `on_market_feed_status` 查看暂停、部分可用及恢复。
