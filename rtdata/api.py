@@ -49,7 +49,7 @@ class API:
                  history_capability_ack_timeout: float = 5.0,
                  session_rehome_advertise: bool = True,
                  session_capability_ack_timeout: float = 5.0,
-                 realtime_protocol: str = 'auto'):
+                 realtime_protocol: str = 'auto', realtime_numeric: bool = False):
         self._client = RtdataClient(
             token=token,
             api_url=api_url,
@@ -65,6 +65,7 @@ class API:
             session_rehome_advertise=session_rehome_advertise,
             session_capability_ack_timeout=session_capability_ack_timeout,
             realtime_protocol=realtime_protocol,
+            realtime_numeric=realtime_numeric,
         )
         self._connected = False
 
@@ -188,11 +189,44 @@ class API:
     def subscribe(self, symbols: List[str]):
         """订阅实时行情"""
         self._ensure_connected()
-        self._client.subscribe(symbols)
+        return self._client.subscribe(symbols)
 
     def unsubscribe(self, symbols: Optional[List[str]] = None):
         """取消订阅"""
-        self._client.unsubscribe(symbols)
+        return self._client.unsubscribe(symbols)
+
+    def get_markets(self, timeout=10):
+        self._ensure_connected()
+        return self._client.get_markets(timeout)
+
+    def subscribe_market(self, market):
+        self._ensure_connected()
+        return self._client.subscribe_market(market)
+
+    def subscribe_markets(self, markets):
+        self._ensure_connected()
+        return self._client.subscribe_markets(markets)
+
+    def unsubscribe_market(self, market):
+        return self._client.unsubscribe_market(market)
+
+    @property
+    def market_subscription_status(self):
+        return self._client.market_subscription_status
+
+    @property
+    def market_feed_status(self):
+        return self._client.market_feed_status
+
+    @property
+    def on_market_feed_status(self):
+        return self._client.on_market_feed_status
+
+    def list_market_issues(self, limit=100, offset=0, catalog_revision=None, timeout=10,
+                          *, scope='catalog', upstream_revision=None, subscription_generation=None):
+        return self._client.list_market_issues(limit, offset, catalog_revision, timeout,
+                                             scope=scope, upstream_revision=upstream_revision,
+                                             subscription_generation=subscription_generation)
 
     @property
     def on_quote(self):

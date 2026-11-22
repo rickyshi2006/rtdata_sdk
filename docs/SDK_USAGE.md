@@ -1,6 +1,6 @@
 # rtdata SDK 使用手册
 
-本文对应 `0.3.9`，包含实时协商修复及 `Quote/Kline.to_datetime()`。
+本文对应 `0.4.0`，包含市场分类订阅、无损块接收及 `Quote/Kline.to_datetime()`。
 安装见 [README](../README.md)。Python 最低版本为 3.9。
 
 ## 1. 连接入口与生命周期
@@ -50,6 +50,7 @@ finally:
 | `session_rehome_advertise` | `True` | 声明安全节点迁移能力 |
 | `session_capability_ack_timeout` | `5.0` | 节点迁移能力 ACK 等待秒数 |
 | `realtime_protocol` | `"auto"` | `auto`、`legacy`、`required_v2` |
+| `realtime_numeric` | `False` | 显式申请实验性无损数值压缩；还需原生可选包及服务端支持，详见 `NUMERIC-CODEC.md` |
 
 ### RtdataClient 构造参数
 
@@ -133,6 +134,9 @@ oi = q.fields.get("open_interest")
 部分有效时保留其余代码的待补订意图。断线期间 `unsubscribe` 仍可取消恢复意图。
 
 行情是最新值优先的快照流，不保证每个中间事件。慢回调会丢失中间状态；回调应轻量。
+V2 异步回调对已接纳、仍有效且未因队列溢出丢弃的行情按入队顺序交付，
+不会仅因缓存已有更新值而跳过；`get_quote()` 仍只返回最新缓存。
+断线、来源失效或身份移除会拦截旧回调，退订后重新订阅也不会恢复旧队列中的行情。
 `async_callbacks` 只针对行情分发，不意味着所有事件都在工作线程；连接、状态等回调
 也不能做阻塞查询。同步行情回调尤其不能调用查询或等待接口，否则会阻塞接收线程。
 
@@ -255,3 +259,9 @@ Token 说明见 [TOKEN_STATUS](TOKEN_STATUS.md)；未收到通知时 `token_stat
 
 可运行 [诊断示例](../examples/diagnose_realtime_stall.py)，它只使用公开状态，不做时区偏移补丁。
 全部示例及其适用场景见 [示例索引](../examples/README.md)。
+
+## 按市场分类订阅
+
+七类市场订阅接口见 [按市场分类订阅](MARKET-SUBSCRIPTIONS.md)。
+`market_subscription_status` 表示订阅安装状态；`market_feed_status` 与
+`on_market_feed_status` 分别提供分类供数采样和变化回调，区分正常、部分可用、暂停及恢复。

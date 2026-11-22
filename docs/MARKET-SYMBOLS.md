@@ -1,5 +1,7 @@
 # 市场品种分类与代码实例
 
+SDK 0.4.0 的整类订阅接口及限制见 [按市场分类订阅](MARKET-SUBSCRIPTIONS.md)。
+
 本文整理 rtdata 的公开市场分类、代码格式及实例，适用于实时订阅和历史查询时选择证券。
 时间转换单独见 [时间与市场代码](TIME-AND-MARKETS.md)，字段见 [实时全字段说明](REALTIME-FULL-FIELDS.md)。
 

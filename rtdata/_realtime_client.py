@@ -11,6 +11,8 @@ from types import MappingProxyType
 from . import _protocol as proto
 from . import _realtime_capability as cap
 from . import _realtime_protocol as wire
+from . import _numeric_codec as numeric_codec
+from . import _realtime_block as block
 from ._realtime_schema import SOURCES
 from .exceptions import RealtimeUnavailableError
 from .models import Quote, RealtimeStatus, RealtimeTableStatus
@@ -37,7 +39,12 @@ def _login_realtime_capability(payload):
 
 
 class RealtimeClientMixin:
-    def _init_realtime(self, mode):
+    def _init_realtime(self, mode, numeric=False):
+        if type(numeric) is not bool:
+            raise ValueError('realtime_numeric must be bool')
+        self._numeric_requested = numeric
+        self._block_numeric = False
+        self._numeric_received = 0
         self._realtime = cap.Session(cap.Role.SDK, cap.Role.CLOUD, mode,
                                      cap.EXTENDED_SOURCE_MASK, cap.EXTENDED_PAYLOAD)
         self._realtime_lock = threading.RLock()
@@ -45,14 +52,23 @@ class RealtimeClientMixin:
         self._realtime_connection = None
         self._realtime_transport_generation = 0
         self._realtime_timer = None
+        self._block_phase = 'off'
+        self._block_nonce = (0, 0)
+        self._block_timer = None
+        self._block_received = self._block_events = self._block_wire_bytes = 0
         self._realtime_callbacks = []
         self._realtime_last_status = None
         self._realtime_last_error = None
         self._realtime_lost_sources = 0
         self._realtime_watermarks = {}
+        self._realtime_admission = 0
         self._realtime_cache_sizes = {}
         self._realtime_cache_bytes = 0
         self._realtime_rejected = 0
+        self._realtime_symbol_capacity = 250000
+        self._realtime_cache_limit = 16 * 1024 * 1024
+        self._realtime_cache_evictions = 0
+        self._realtime_invalidations = {sid: 0 for sid in SOURCES}
 
     @property
     def on_realtime_status(self):
@@ -87,7 +103,12 @@ class RealtimeClientMixin:
         with self._realtime_lock:
             return MappingProxyType(dict(rejected=self._realtime_rejected,
                 cached_wire_bytes=self._realtime_cache_bytes,
-                tracked_symbols=len(self._realtime_watermarks)))
+                cache_evictions=self._realtime_cache_evictions,
+                tracked_symbols=len(self._realtime_watermarks), block_phase=self._block_phase,
+                compressed_blocks=self._block_received, compressed_events=self._block_events,
+                compressed_wire_bytes=self._block_wire_bytes,
+                numeric_negotiated=self._block_numeric and self._block_phase == 'active',
+                numeric_blocks=self._numeric_received))
 
     def _notify_realtime_status(self):
         with self._realtime_lock:
@@ -102,6 +123,8 @@ class RealtimeClientMixin:
                       and bool(self._subscribe_queue))
         if resume:
             self._resume_subscriptions()
+        elif getattr(self, '_market_peer', False):
+            self._resume_markets()
         for callback in self._realtime_callbacks:
             try:
                 callback(status)
@@ -130,6 +153,9 @@ class RealtimeClientMixin:
                 logger.exception('Realtime error callback failed')
 
     def _invalidate_realtime_locked(self, mask=cap.EXTENDED_SOURCE_MASK, all_quotes=False):
+        for sid in self._realtime_invalidations:
+            if all_quotes or mask & cap.source_bit(sid):
+                self._realtime_invalidations[sid] += 1
         with self._quote_cache_lock:
             for code, quote in list(self._quote_cache.items()):
                 if all_quotes or quote.source_id is None or mask & cap.source_bit(quote.source_id):
@@ -142,6 +168,12 @@ class RealtimeClientMixin:
 
     def _reset_realtime(self, reason):
         with self._realtime_lock:
+            if self._block_timer:
+                self._block_timer.cancel()
+                self._block_timer = None
+            self._block_phase = 'off'
+            self._block_nonce = (0, 0)
+            self._block_numeric = False
             if self._realtime_timer:
                 self._realtime_timer.cancel()
                 self._realtime_timer = None
@@ -224,6 +256,17 @@ class RealtimeClientMixin:
                 return
             self._realtime.reset(self._realtime.generation + 1, True)
             self._realtime.local = _login_realtime_capability(auth_payload)
+            self._block_phase = 'off'
+            self._block_numeric = False
+            if block.available() and 1 < len(auth_payload) <= 4096:
+                try:
+                    hint = json.loads(auth_payload[1:])
+                    if hint.get('realtime_block_v1') is True:
+                        self._block_phase = 'idle'
+                        self._block_numeric = (self._numeric_requested and
+                            hint.get('realtime_numeric_v1') is True and numeric_codec.available())
+                except (ValueError, TypeError, AttributeError, RecursionError):
+                    pass
             self._realtime_connection = conn
             self._realtime_transport_generation = conn.generation
             self._invalidate_realtime_locked(all_quotes=True)
@@ -232,6 +275,70 @@ class RealtimeClientMixin:
             self._realtime_send_locked(action)
             self._realtime_apply_locked()
         self._notify_realtime_status()
+
+    def _send_block_locked(self, kind, payload):
+        if not self._realtime_connection.send_for_generation(
+                proto.build_message(kind, 0, payload), self._realtime_transport_generation):
+            self._block_fail_locked()
+
+    def _block_fail_locked(self):
+        self._block_phase = 'closed'
+        self._realtime.phase = 'closed'
+        self._realtime.reason = 'invalid_realtime_block'
+        if self._block_timer:
+            self._block_timer.cancel()
+            self._block_timer = None
+        self._realtime_apply_locked()
+
+    def _block_timeout(self, generation):
+        with self._realtime_lock:
+            if (generation == self._realtime.generation and self._realtime_current_locked()
+                    and self._block_phase in ('ack', 'ready')):
+                self._block_fail_locked()
+
+    def _handle_realtime_block(self, kind, symbol, payload, generation, connection):
+        inner = ()
+        with self._realtime_lock:
+            if not self._realtime_current_locked(generation, connection):
+                return
+            try:
+                if symbol or self._realtime.phase != 'active':
+                    raise ValueError('block before V2')
+                if kind == block.ACK and self._block_phase == 'ack':
+                    nonce = block.parse_negotiation(payload, numeric=self._block_numeric)
+                    if nonce[0] != self._block_nonce[0] or not nonce[1]:
+                        raise ValueError('block ack nonce')
+                    self._block_nonce = nonce
+                    self._block_phase = 'ready'
+                    self._send_block_locked(block.COMMIT, payload)
+                elif kind == block.READY and self._block_phase == 'ready':
+                    if block.parse_negotiation(payload, numeric=self._block_numeric) != self._block_nonce:
+                        raise ValueError('block ready nonce')
+                    self._block_phase = 'active'
+                    if self._block_timer:
+                        self._block_timer.cancel()
+                        self._block_timer = None
+                elif kind == block.DATA and self._block_phase == 'active':
+                    is_numeric = self._block_numeric and payload[:4] == b'RBN1'
+                    raw = numeric_codec.decode(payload, transport=True) if is_numeric else block.decode(payload)
+                    inner = block.frames(raw)
+                    # Parse every schema before callbacks; a corrupt tail cannot
+                    # cause a valid prefix to escape into user code.
+                    inner = tuple((sid, body, wire.decode(body)) for sid, body in inner)
+                    self._block_received += 1
+                    self._numeric_received += is_numeric
+                    self._block_events += len(inner)
+                    self._block_wire_bytes += 10 + len(payload)
+                else:
+                    raise ValueError('block negotiation state')
+            except (ValueError, RuntimeError, MemoryError):
+                self._realtime_rejected += 1
+                self._block_fail_locked()
+                return
+        # Existing per-event permission/source/watermark checks and callback
+        # ordering still apply. Do not recursively count inner bytes as wire.
+        for sid, body, row in inner:
+            self._handle_full_snapshot(sid, body, generation, connection, row)
 
     def _handle_realtime_control(self, msg_type, symbol, payload, generation, connection):
         with self._realtime_lock:
@@ -251,49 +358,68 @@ class RealtimeClientMixin:
             # Reuse delivered-row identities; do not guess a market from a ticker.
             if lost:
                 with self._subscribed_lock:
-                    for sid, (source, _, _) in self._realtime_watermarks.items():
-                        if (source in lost and self._symbol_map.id_to_code(sid)
-                                in self._desired_subscriptions):
+                    for sid, (source, *_) in self._realtime_watermarks.items():
+                        if (source in lost and (self._market_code(sid)
+                                in self._desired_subscriptions or (getattr(self, '_market_ready', False)
+                                and self._market_code(sid) is not None))):
                             self._realtime_lost_sources |= cap.source_bit(source)
             if action:
                 self._realtime_send_locked(action)
             self._realtime_apply_locked()
+            if self._realtime.phase == 'active' and self._block_phase == 'idle':
+                self._block_nonce = (secrets.randbits(64) or 1, 0)
+                self._block_phase = 'ack'
+                self._send_block_locked(block.OFFER, block.negotiation(*self._block_nonce,
+                                                                      numeric=self._block_numeric))
+                if self._block_phase == 'ack':
+                    self._block_timer = threading.Timer(5, self._block_timeout,
+                        args=(self._realtime.generation,))
+                    self._block_timer.daemon = True
+                    self._block_timer.start()
         self._notify_realtime_status()
 
-    def _handle_full_snapshot(self, symbol, payload, generation, connection):
+    def _handle_full_snapshot(self, symbol, payload, generation, connection, decoded=None):
         with self._realtime_lock:
             if not self._realtime_current_locked(generation, connection):
                 return
             try:
-                row = wire.decode(payload)
-                code = self._symbol_map.id_to_code(symbol)
-                if not symbol or code != row.fields['code'] or not self._realtime.admits(
+                row = decoded if decoded is not None else wire.decode(payload)
+                code = self._market_code(symbol)
+                expected_source = self._market_source(symbol)
+                if (expected_source and expected_source != row.source_id) or not symbol or code != row.fields['code'] or not self._realtime.admits(
                         row.source_id, row.source_epoch, len(payload)):
                     raise ValueError('realtime identity, readiness or epoch mismatch')
                 previous = self._realtime_watermarks.get(symbol)
                 if previous:
-                    source, epoch, seq = previous
+                    source, epoch, seq = previous[:3]
                     if source != row.source_id:
                         raise ValueError('realtime table changed without invalidation')
                     if epoch == row.source_epoch and seq >= row.sequence:
                         self._realtime_rejected += 1
                         return
-                if previous is None and len(self._realtime_watermarks) >= 65536:
+                if previous is None and len(self._realtime_watermarks) >= self._realtime_symbol_capacity:
                     raise ValueError('realtime symbol capacity exceeded')
-                old_size = self._realtime_cache_sizes.get(code, 0)
-                if self._realtime_cache_bytes - old_size + len(payload) > 16 * 1024 * 1024:
-                    with self._quote_cache_lock:
-                        self._quote_cache.pop(code, None)
-                    self._realtime_cache_bytes -= self._realtime_cache_sizes.pop(code, 0)
-                    self._realtime_watermarks[symbol] = (row.source_id, row.source_epoch, row.sequence)
-                    self._realtime_changed.notify_all()
-                    raise ValueError('realtime cache byte budget exceeded')
                 quote = Quote.from_snapshot(row, symbol, code)
-                self._realtime_watermarks[symbol] = (row.source_id, row.source_epoch, row.sequence)
+                object.__setattr__(quote, '_delivery_generation', self._realtime.generation)
+                object.__setattr__(quote, '_delivery_invalidation', self._realtime_invalidations[row.source_id])
+                # A removed/re-admitted identity must not revive its old callbacks.
+                if previous is None:
+                    self._realtime_admission += 1
+                admission = previous[3] if previous is not None else self._realtime_admission
+                object.__setattr__(quote, '_delivery_admission', admission)
+                self._realtime_watermarks[symbol] = (row.source_id, row.source_epoch, row.sequence, admission)
                 with self._quote_cache_lock:
-                    self._quote_cache[code] = quote
-                self._realtime_cache_bytes += len(payload) - old_size
-                self._realtime_cache_sizes[code] = len(payload)
+                    self._quote_cache.pop(code, None)
+                    self._realtime_cache_bytes -= self._realtime_cache_sizes.pop(code, 0)
+                    while self._quote_cache and self._realtime_cache_bytes + len(payload) > self._realtime_cache_limit:
+                        evicted = next(iter(self._quote_cache))
+                        del self._quote_cache[evicted]
+                        self._realtime_cache_bytes -= self._realtime_cache_sizes.pop(evicted, 0)
+                        self._realtime_cache_evictions += 1
+                    if len(payload) <= self._realtime_cache_limit:
+                        self._quote_cache[code] = quote
+                        self._realtime_cache_sizes[code] = len(payload)
+                        self._realtime_cache_bytes += len(payload)
                 self._realtime_changed.notify_all()
             except ValueError as exc:
                 self._realtime_rejected += 1
@@ -303,8 +429,24 @@ class RealtimeClientMixin:
             self._quotes_received += 1
         self._dispatch_quote(quote)
 
-    def _quote_is_current(self, quote):
+    def _quote_is_current(self, quote, *, latest=True):
         with self._realtime_lock:
+            if getattr(quote, '_delivery_generation', self._realtime.generation) != self._realtime.generation:
+                return False
+            if getattr(self, '_market_ready', False) and self._market_code(quote.symbol_id) != quote.symbol:
+                return False
+            if quote.wire_version == 2:
+                if getattr(quote, '_delivery_invalidation', -1) != self._realtime_invalidations[quote.source_id]:
+                    return False
+                watermark = self._realtime_watermarks.get(quote.symbol_id)
+                if watermark is None or getattr(quote, '_delivery_admission', None) != watermark[3]:
+                    return False
+                if latest:
+                    return watermark[:3] == (quote.source_id, quote.source_epoch, quote.sequence)
+                # The cache is latest-only; accepted FIFO callbacks are not.
+                # Invalidation and epoch fences above still apply at delivery.
+                return (watermark[:2] == (
+                    quote.source_id, quote.source_epoch) and quote.sequence <= watermark[2])
             with self._quote_cache_lock:
                 return self._quote_cache.get(quote.symbol) is quote
 
@@ -328,6 +470,8 @@ class RealtimeClientMixin:
             while True:
                 with self._quote_cache_lock:
                     quote = self._quote_cache.get(symbol)
+                if quote is not None and not self._quote_is_current(quote):
+                    quote = None
                 if quote is not None and (self._realtime.mode != 'required_v2' or quote.wire_version == 2):
                     return quote
                 if not self.is_connected:

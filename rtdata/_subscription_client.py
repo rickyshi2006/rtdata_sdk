@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 class SubscriptionClientMixin:
     def _init_subscriptions(self):
-        self._subscribed_lock = threading.Lock()
+        self._subscribed_lock = threading.RLock()
         self._desired_subscriptions = {}
         self._subscription_revision = 0
         self._subscription_ids = {}
@@ -55,6 +55,8 @@ class SubscriptionClientMixin:
                     logger.error("Error callback failed: %s", exc)
 
     def _reset_subscriptions(self):
+        if hasattr(self, '_market_changed'):
+            self._reset_markets()
         with self._subscribed_lock:
             self._authenticated = False
             self._subscription_ids.clear()
@@ -68,6 +70,8 @@ class SubscriptionClientMixin:
             self._last_subscribe_warning = None
 
     def _flush_subscriptions_locked(self):
+        if getattr(self, '_market_peer', False):
+            return
         connection = self._conn
         if (not self._authenticated or connection is None or self._subscribe_inflight
                 or not self._subscription_protocol_ready or not self._subscribe_queue):
@@ -98,6 +102,10 @@ class SubscriptionClientMixin:
 
     def subscribe(self, symbols: List[str]):
         symbols = list(dict.fromkeys(symbols))
+        if getattr(self, '_market_peer', False):
+            if not 1 <= len(symbols) <= 512:
+                raise ValueError('manual subscription request requires 1..512 symbols')
+            return self._market_request('subscribe', symbols=symbols)
         with self._subscribed_lock:
             if not self._authenticated:
                 raise ConnectionError("Not connected")
@@ -122,6 +130,13 @@ class SubscriptionClientMixin:
         self._schedule_subscription_refresh()
 
     def unsubscribe(self, symbols: Optional[List[str]] = None):
+        if getattr(self, '_market_peer', False):
+            if symbols is None:
+                return self._market_request('clear')
+            symbols = list(dict.fromkeys(symbols))
+            if not 1 <= len(symbols) <= 512:
+                raise ValueError('manual unsubscribe request requires 1..512 symbols')
+            return self._market_request('unsubscribe', symbols=symbols)
         with self._subscribed_lock:
             removed = set(self._desired_subscriptions if symbols is None else symbols)
             ids = []
@@ -173,6 +188,8 @@ class SubscriptionClientMixin:
         self._schedule_subscription_refresh()
 
     def _resume_subscriptions(self):
+        if hasattr(self, '_market_changed') and self._resume_markets():
+            return
         with self._subscribed_lock:
             self._flush_subscriptions_locked()
             warning = self._subscription_status_locked()
@@ -180,6 +197,8 @@ class SubscriptionClientMixin:
         self._schedule_subscription_refresh()
 
     def _schedule_subscription_refresh(self):
+        if getattr(self, '_market_peer', False):
+            return
         # At most one unconditional HTTP refresh per connection generation.
         # Never block the receive loop or repeatedly retry a server rejection.
         with self._subscribed_lock:
